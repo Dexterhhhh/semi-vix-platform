@@ -111,3 +111,15 @@ class StockSnapshot(Base):
     ask: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     volume: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     delayed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+
+
+class SVIXHistory(Base):
+    __tablename__ = "svix_history"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, unique=True, index=True)
+    svix: Mapped[float] = mapped_column(Float, nullable=False)
+    core_vol: Mapped[float] = mapped_column(Float, nullable=False)
+    memory_vol: Mapped[float] = mapped_column(Float, nullable=False)
+    ai_vol: Mapped[float] = mapped_column(Float, nullable=False)
+    calculation_quality: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)

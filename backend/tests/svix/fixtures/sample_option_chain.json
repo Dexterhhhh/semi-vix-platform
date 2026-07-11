@@ -1,0 +1,8 @@
+[
+  {"strike": 90.0, "option_type": "C", "bid": 10.5, "ask": 11.5},
+  {"strike": 90.0, "option_type": "P", "bid": 0.8, "ask": 1.2},
+  {"strike": 100.0, "option_type": "C", "bid": 5.8, "ask": 6.2},
+  {"strike": 100.0, "option_type": "P", "bid": 3.8, "ask": 4.2},
+  {"strike": 110.0, "option_type": "C", "bid": 0.8, "ask": 1.2},
+  {"strike": 110.0, "option_type": "P", "bid": 10.5, "ask": 11.5}
+]

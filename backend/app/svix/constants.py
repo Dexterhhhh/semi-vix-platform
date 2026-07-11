@@ -1,0 +1,18 @@
+"""Named defaults for the Phase 3 calculation engine."""
+
+from datetime import timedelta
+
+TRADING_DAYS_PER_YEAR = 252
+CALENDAR_DAYS_PER_YEAR = 365.0
+TARGET_DAYS = 30
+DEFAULT_RISK_FREE_RATE = 0.0
+MIN_OPTION_STRIKES = 2
+MIN_PARITY_PAIRS = 1
+ALLOW_LAST_PRICE_FALLBACK = False
+COMPONENT_WEIGHTS = {"core": 0.50, "memory": 0.30, "ai": 0.20}
+MEMORY_WEIGHTS = {"MU": 0.50, "SKHY": 0.50}
+AI_WEIGHTS = {"NVDA": 0.50, "AMD": 0.25, "AVGO": 0.25}
+CORE_WEIGHTS = {"SOXX": 1.0}
+CORRELATION_WINDOWS = (60, 120, 252)
+CORRELATION_WINDOW_WEIGHTS = {60: 0.50, 120: 0.30, 252: 0.20}
+ONE_DAY = timedelta(days=1)

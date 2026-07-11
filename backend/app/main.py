@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from app.api.health import router as health_router
 from app.api.provider import router as provider_router
+from app.api.svix import router as svix_router
 from app.auth.password import hash_password
 from app.auth.routes import router as auth_router
 from app.config import get_settings
@@ -37,3 +38,4 @@ app.add_middleware(CORSMiddleware, allow_origins=get_settings().allowed_origins,
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(provider_router)
+app.include_router(svix_router)

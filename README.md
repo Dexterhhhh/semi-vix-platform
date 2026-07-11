@@ -1,6 +1,6 @@
 # Semi-VIX Platform — Phase 2
 
-Semi-VIX 是一个计划自托管部署的半导体波动率分析平台。本阶段交付 FastAPI、PostgreSQL、单管理员认证、TOTP MFA、JWT 会话，以及独立的只读行情数据层。不含 SVIX 计算、交易能力或完整前端仪表盘。
+Semi-VIX 是一个计划自托管部署的半导体波动率分析平台。当前交付 FastAPI、PostgreSQL、单管理员认证、TOTP MFA、JWT 会话、独立的只读行情数据层，以及 VIX 风格 SVIX 计算引擎。不含交易能力或完整前端仪表盘。
 
 ## 本阶段内容
 
@@ -112,4 +112,24 @@ docker compose exec -T backend pytest -q
 
 ## 后续阶段
 
-React 界面、Redis/Celery 实际调度、SVIX 计算、历史可视化仍未实现。IBKR/Futu 的只读行情架构、加密配置与快照存储已在 Phase 2 实现。
+React 界面、Redis/Celery 实际调度和历史可视化仍未实现。SVIX 数学引擎与历史结果存储已在 Phase 3 实现；异步历史任务调度将在后续阶段接入。
+
+## SVIX Methodology（Phase 3）
+
+Phase 3 新增完全独立于 IBKR/Futu 的计算引擎。它只接收 Phase 2 已标准化的期权快照，不会导入券商 SDK，也不具备任何交易能力。
+
+- 每个到期日根据有效 bid/ask 中间价计算 put-call parity forward：`F = K + exp(RT) × (C - P)`；缺失中间价默认不会使用 last price 或虚构零值。
+- 选择不高于 forward 的最大 `K0`；若不存在会记录最近行权价回退。K0 必须同时具备有效 call 与 put，采用两者中间价平均值。
+- K0 以下使用 puts、K0 以上使用 calls；通过 `ΔK` 与 VIX 式方差复制公式计算单到期日的年化隐含方差。
+- 使用包围 30 个日历日的两个到期日对**方差**插值，而不是线性插值波动率。
+- Core 为 SOXX；Memory 为 MU/SKHY（各 50%）；AI 为 NVDA/AMD/AVGO（50%/25%/25%）；总 SVIX 权重为 50%/30%/20%。
+- 相关性以 60、120、252 日历史对数收益率矩阵按 50%/30%/20% 加权，组合方差为 `wᵀΣw`。
+- 可选的 SOXX 成分权重输入会减少与直接股票仓位重复的暴露，并重新归一化。
+
+计算结果写入 `svix_history`。受 MFA 会话保护的接口：
+
+- `GET /api/svix/current`
+- `GET /api/svix/history?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD`
+- `POST /api/svix/calculate`，请求体包含 `start_date`、`end_date` 与 `frequency`（`daily` 或 `weekly`）。
+
+历史计算要求每个标的已有足够的期权快照，并至少有 252 个对齐历史收益率；数据不足时会跳过该日期，不会写入零值。任务调度仍将在后续阶段接入。
