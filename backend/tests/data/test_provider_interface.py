@@ -17,14 +17,14 @@ class FakeProvider(MarketDataProvider):
         return self.connected
 
     async def get_stock_quote(self, symbol: str) -> StockQuote:
-        return StockQuote(symbol, datetime.now(timezone.utc), 100.0, 99.0, 101.0, 10)
+        return StockQuote(symbol=symbol, timestamp=datetime.now(timezone.utc), price=100.0, bid=99.0, ask=101.0, volume=10, provider=self.provider_name)
 
     async def get_option_chain(self, symbol: str, expiry=None) -> list[OptionContract]:
         expiry = expiry or datetime(2026, 8, 21, tzinfo=timezone.utc)
-        return [OptionContract(symbol, expiry, 100.0, "C", "fake-contract")]
+        return [OptionContract(contract_id="FAKE:fake-contract", symbol=symbol, expiry=expiry, strike=100.0, option_type="C", provider=self.provider_name)]
 
     async def get_option_quote(self, contract: OptionContract) -> OptionQuote:
-        return OptionQuote(contract.contract_id, contract.symbol, contract.expiry, contract.strike, contract.option_type, 4.0, 4.2, 4.1, 10, 20, 0.31)
+        return OptionQuote(contract_id=contract.contract_id, symbol=contract.symbol, expiry=contract.expiry, strike=contract.strike, option_type=contract.option_type, timestamp=datetime.now(timezone.utc), bid=4.0, ask=4.2, last=4.1, volume=10, open_interest=20, implied_volatility=0.31, provider=self.provider_name)
 
 
 def test_provider_interface_contract() -> None:

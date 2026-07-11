@@ -5,7 +5,7 @@ from app.config import get_settings
 
 
 def _key() -> bytes:
-    key = base64.urlsafe_b64decode(get_settings().secret_encryption_key.encode())
+    key = base64.urlsafe_b64decode(get_settings().secret_encryption_key.get_secret_value().encode())
     if len(key) != 32:
         raise ValueError("SECRET_ENCRYPTION_KEY must decode to 32 bytes")
     return key

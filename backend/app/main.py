@@ -7,7 +7,7 @@ from app.api.provider import router as provider_router
 from app.auth.password import hash_password
 from app.auth.routes import router as auth_router
 from app.config import get_settings
-from app.database.database import SessionLocal, create_schema_for_development
+from app.database.database import SessionLocal
 from app.database.models import AdminAccount, AdminSecurity
 
 
@@ -17,7 +17,7 @@ def ensure_initial_admin() -> None:
     database: Session = SessionLocal()
     try:
         if database.query(AdminAccount).first() is None:
-            admin = AdminAccount(id=1, username=settings.svix_admin_username, password_hash=hash_password(settings.svix_admin_password))
+            admin = AdminAccount(id=1, username=settings.svix_admin_username, password_hash=hash_password(settings.svix_admin_password.get_secret_value()))
             database.add(admin)
             database.flush()
             database.add(AdminSecurity(admin_id=admin.id))
@@ -28,7 +28,6 @@ def ensure_initial_admin() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    create_schema_for_development()
     ensure_initial_admin()
     yield
 

@@ -6,6 +6,7 @@ from app.main import app
 
 def test_mfa_setup_and_verification() -> None:
     Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
     with TestClient(app) as client:
         login = client.post("/api/auth/login", json={"username": "admin", "password": "test-password"}).json()
         setup = client.post("/api/auth/setup-mfa", json={"temporary_token": login["temporary_token"]})

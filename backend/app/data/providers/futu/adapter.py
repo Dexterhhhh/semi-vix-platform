@@ -1,10 +1,12 @@
-from datetime import datetime, timezone
-from typing import Optional
-from app.data.exceptions import UnsupportedSymbolError
+from __future__ import annotations
+
+from datetime import date, datetime, timezone
+
 from app.data.models import OptionContract, OptionQuote, StockQuote
+from app.data.normalization import optional_float, optional_int
 from app.data.provider import MarketDataProvider
 from app.data.providers.futu.client import FutuClient
-from app.data.providers.ibkr.adapter import SUPPORTED_SYMBOLS, _number
+from app.data.universe import normalize_symbol
 
 
 class FutuProvider(MarketDataProvider):
@@ -12,13 +14,6 @@ class FutuProvider(MarketDataProvider):
 
     def __init__(self, client: FutuClient):
         self.client = client
-
-    @staticmethod
-    def _symbol(symbol: str) -> str:
-        normalized = symbol.upper()
-        if normalized not in SUPPORTED_SYMBOLS:
-            raise UnsupportedSymbolError(f"Unsupported Futu symbol: {symbol}")
-        return normalized
 
     async def connect(self) -> None:
         await self.client.connect()
@@ -30,15 +25,15 @@ class FutuProvider(MarketDataProvider):
         return await self.client.health_check()
 
     async def get_stock_quote(self, symbol: str) -> StockQuote:
-        symbol = self._symbol(symbol)
+        symbol = normalize_symbol(symbol)
         raw = await self.client.stock_quote(symbol)
-        return StockQuote(symbol, datetime.now(timezone.utc), _number(raw.get("price")), _number(raw.get("bid")), _number(raw.get("ask")), int(raw["volume"]) if raw.get("volume") else None)
+        return StockQuote(symbol=symbol, timestamp=datetime.now(timezone.utc), price=optional_float(raw.get("price")), bid=optional_float(raw.get("bid")), ask=optional_float(raw.get("ask")), volume=optional_int(raw.get("volume")), provider=self.provider_name, delayed=raw.get("delayed"))
 
-    async def get_option_chain(self, symbol: str, expiry: Optional[datetime] = None) -> list[OptionContract]:
-        symbol = self._symbol(symbol)
+    async def get_option_chain(self, symbol: str, expiry: date | datetime | None = None) -> list[OptionContract]:
+        symbol = normalize_symbol(symbol)
         rows = await self.client.option_chain(symbol, expiry)
-        return [OptionContract(symbol, datetime.fromisoformat(row["expiry"]).replace(tzinfo=timezone.utc), row["strike"], row["option_type"], row["code"]) for row in rows]
+        return [OptionContract(contract_id=f"FUTU:{row['code']}", symbol=symbol, expiry=datetime.fromisoformat(row["expiry"]).replace(tzinfo=timezone.utc), strike=optional_float(row["strike"]), option_type=row["option_type"], multiplier=100, currency="USD", exchange=None, provider=self.provider_name) for row in rows]
 
     async def get_option_quote(self, contract: OptionContract) -> OptionQuote:
-        raw = await self.client.option_quote(contract.contract_id)
-        return OptionQuote(contract.contract_id, contract.symbol, contract.expiry, contract.strike, contract.option_type, _number(raw.get("bid")), _number(raw.get("ask")), _number(raw.get("last")), int(raw["volume"]) if raw.get("volume") else None, int(raw["open_interest"]) if raw.get("open_interest") else None, _number(raw.get("implied_volatility")))
+        raw = await self.client.option_quote(contract.contract_id.split(":", 1)[1])
+        return OptionQuote(contract_id=contract.contract_id, symbol=contract.symbol, expiry=contract.expiry, strike=contract.strike, option_type=contract.option_type, timestamp=datetime.now(timezone.utc), bid=optional_float(raw.get("bid")), ask=optional_float(raw.get("ask")), last=optional_float(raw.get("last")), volume=optional_int(raw.get("volume")), open_interest=optional_int(raw.get("open_interest")), implied_volatility=optional_float(raw.get("implied_volatility")), provider=self.provider_name, delayed=raw.get("delayed"))

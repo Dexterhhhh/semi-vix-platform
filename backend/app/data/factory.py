@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.config import get_settings
-from app.data.exceptions import ProviderUnavailableError
+from app.data.exceptions import ProviderConfigurationError
 from app.data.provider import MarketDataProvider
 from app.data.providers.futu.adapter import FutuProvider
 from app.data.providers.futu.client import FutuClient
@@ -16,4 +16,4 @@ def create_provider(provider_name: str | None = None) -> MarketDataProvider:
         return IBKRProvider(IBKRClient(settings.ibkr_host, settings.ibkr_port, settings.ibkr_client_id))
     if provider == "FUTU":
         return FutuProvider(FutuClient(settings.futu_host, settings.futu_port))
-    raise ProviderUnavailableError(f"Unsupported DATA_PROVIDER: {provider}")
+    raise ProviderConfigurationError(f"Unsupported DATA_PROVIDER: {provider}")

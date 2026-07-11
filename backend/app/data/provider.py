@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from datetime import datetime
-from typing import Optional
+from datetime import date, datetime
 from app.data.models import OptionContract, OptionQuote, StockQuote
 
 
@@ -19,7 +20,7 @@ class MarketDataProvider(ABC):
     async def get_stock_quote(self, symbol: str) -> StockQuote: ...
 
     @abstractmethod
-    async def get_option_chain(self, symbol: str, expiry: Optional[datetime] = None) -> list[OptionContract]: ...
+    async def get_option_chain(self, symbol: str, expiry: date | datetime | None = None) -> list[OptionContract]: ...
 
     @abstractmethod
     async def get_option_quote(self, contract: OptionContract) -> OptionQuote: ...

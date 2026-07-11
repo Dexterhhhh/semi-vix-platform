@@ -5,6 +5,7 @@ from app.main import app
 
 def _client() -> TestClient:
     Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
     with TestClient(app) as client:
         yield client
 

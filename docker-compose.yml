@@ -18,6 +18,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        INSTALL_FUTU: ${INSTALL_FUTU:-false}
     restart: unless-stopped
     env_file: .env
     depends_on:
