@@ -5,7 +5,8 @@ from app.database.database import Base
 from app.database import models  # noqa: F401
 
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# ConfigParser reserves '%' for interpolation; preserve URL-encoded database passwords.
+config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
 target_metadata = Base.metadata
 
 
