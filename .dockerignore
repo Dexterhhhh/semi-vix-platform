@@ -1,0 +1,8 @@
+.git
+.env
+certs/server.crt
+certs/server.key
+**/__pycache__
+**/node_modules
+frontend/dist
+postgres_data

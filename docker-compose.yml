@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-svix}
+      POSTGRES_USER: ${POSTGRES_USER:-svix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-svix} -d ${POSTGRES_DB:-svix}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  # Reserved Phase 2 services. They are disabled by default and have no application logic.
+  frontend:
+    image: nginx:1.27-alpine
+    profiles: ["future"]
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["future"]
+
+  worker:
+    image: busybox:1.37
+    command: ["sh", "-c", "echo 'Phase 2 worker placeholder'"]
+    profiles: ["future"]
+
+volumes:
+  postgres_data:
