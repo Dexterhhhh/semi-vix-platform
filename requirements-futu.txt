@@ -1,0 +1,3 @@
+# Optional Futu OpenAPI dependency. Install this in deployments that select DATA_PROVIDER=FUTU.
+# It is isolated because the upstream SDK includes large pandas/numpy dependencies.
+futu-api==10.8.6808

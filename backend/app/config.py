@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     database_url: str
     secret_key: str
     secret_encryption_key: str
+    credential_master_key: str
     svix_admin_username: str
     svix_admin_password: str
     jwt_expire_minutes: int = 15
@@ -16,6 +17,12 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     cookie_secure: bool = True
     rate_limit_per_minute: int = 10
+    data_provider: str = "IBKR"
+    ibkr_host: str = "127.0.0.1"
+    ibkr_port: int = 7497
+    ibkr_client_id: int = 19
+    futu_host: str = "127.0.0.1"
+    futu_port: int = 11111
 
     @property
     def allowed_origins(self) -> list[str]:

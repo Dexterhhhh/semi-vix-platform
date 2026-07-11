@@ -59,6 +59,26 @@ docker compose up -d --build
 PYTHONPATH=backend pytest backend/tests -q
 ```
 
+## 行情数据配置（Phase 2）
+
+Phase 2 新增了独立于券商的只读行情层，支持 `IBKR` 与 `FUTU`。绝不包含下单、交易或账户资金 API。
+
+在 `.env` 中选择默认来源并配置网关地址：
+
+```dotenv
+DATA_PROVIDER=IBKR
+IBKR_HOST=host.docker.internal
+IBKR_PORT=7497
+IBKR_CLIENT_ID=19
+FUTU_HOST=host.docker.internal
+FUTU_PORT=11111
+CREDENTIAL_MASTER_KEY=<独立的 32 字节 Base64 AES-256-GCM 密钥>
+```
+
+对于 Docker 内服务，使用 `host.docker.internal` 访问宿主机上的 TWS/IB Gateway 或 Futu OpenD。IBKR 必须启用 API、只读模式和美股期权行情权限；Futu OpenD 必须启用美股报价权限。Futu 部署额外执行 `pip install -r requirements-futu.txt`，以避免在未使用 Futu 时下载其大型可选依赖。通过 `POST /api/provider/configure` 保存的可选 API 凭据会以 AES-256-GCM 加密写入数据库，响应从不返回明文。`GET /api/provider/status` 会报告当前提供商与连通性。
+
+行情采集服务位于 `backend/app/services/market_collector.py`，会统一保存 SOXX、MU、SKHY、NVDA、AMD、AVGO 的现货与期权快照。调度器仅保留占位接口，Celery 将在后续阶段接入。
+
 ## 后续 Phase 2
 
-React 前端、Redis/Celery、IBKR/Futu 只读行情接入、期权快照、SVIX 计算与历史可视化仍未实现。
+React 界面、Redis/Celery 实际调度、SVIX 计算、历史可视化仍未实现。IBKR/Futu 的只读行情架构、加密配置与快照存储已在 Phase 2 实现。

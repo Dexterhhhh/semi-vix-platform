@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database.database import Base
 
@@ -47,3 +47,43 @@ class SessionRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     ip_address: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+
+class ProviderCredential(Base):
+    __tablename__ = "provider_credentials"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(16), unique=True, nullable=False, index=True)
+    api_key_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    secret_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    account_identifier_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+
+class OptionSnapshot(Base):
+    __tablename__ = "option_snapshot"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    expiry: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    strike: Mapped[float] = mapped_column(Float, nullable=False)
+    option_type: Mapped[str] = mapped_column(String(4), nullable=False)
+    bid: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ask: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    last: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    volume: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    open_interest: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    implied_volatility: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+
+class StockSnapshot(Base):
+    __tablename__ = "stock_snapshot"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    bid: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ask: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    volume: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
