@@ -1,4 +1,4 @@
-"""Phase 1 initial security schema."""
+"""Initial security schema."""
 from alembic import op
 import sqlalchemy as sa
 

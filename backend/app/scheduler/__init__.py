@@ -1,1 +1,1 @@
-"""Scheduling boundary reserved for a future Celery integration."""
+"""Celery scheduling and background task integration."""

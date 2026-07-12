@@ -15,7 +15,7 @@ class ProviderPermissionError(ProviderError):
 
 
 class UnsupportedSymbolError(ProviderError):
-    """The requested underlying is outside the supported Phase 2 universe."""
+    """The requested underlying is outside the supported market universe."""
 
 
 class OptionChainUnavailableError(ProviderError):

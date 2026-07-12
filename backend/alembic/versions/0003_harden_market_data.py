@@ -1,4 +1,4 @@
-"""Harden Phase 2 market-data persistence and audit configuration changes."""
+"""Harden market-data persistence and audit configuration changes."""
 
 from alembic import op
 import sqlalchemy as sa

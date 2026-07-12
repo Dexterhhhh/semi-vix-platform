@@ -1,4 +1,4 @@
-"""Canonical Phase 2 underlyings shared by every market-data provider."""
+"""Canonical underlyings shared by every market-data provider."""
 
 DEFAULT_SYMBOLS = ("SOXX", "MU", "SKHY", "NVDA", "AMD", "AVGO")
 SUPPORTED_SYMBOLS = frozenset(DEFAULT_SYMBOLS)

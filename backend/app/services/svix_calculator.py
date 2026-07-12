@@ -1,4 +1,4 @@
-"""Historical SVIX calculation service built solely on persisted Phase 2 data."""
+"""Historical SVIX calculation service built on persisted market snapshots."""
 
 from __future__ import annotations
 

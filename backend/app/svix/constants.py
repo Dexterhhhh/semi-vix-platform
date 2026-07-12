@@ -1,4 +1,4 @@
-"""Named defaults for the Phase 3 calculation engine."""
+"""Named defaults for the SVIX calculation engine."""
 
 from datetime import timedelta
 

@@ -1,4 +1,4 @@
-"""Phase 2 market-data infrastructure."""
+"""Market-data infrastructure."""
 from alembic import op
 import sqlalchemy as sa
 
