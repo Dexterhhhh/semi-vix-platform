@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from app.api.health import router as health_router
 from app.api.provider import router as provider_router
 from app.api.svix import router as svix_router
+from app.api.jobs_routes import router as jobs_router
+from app.api.settings_routes import router as settings_router
 from app.auth.password import hash_password
 from app.auth.routes import router as auth_router
 from app.config import get_settings
@@ -39,3 +41,5 @@ app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(provider_router)
 app.include_router(svix_router)
+app.include_router(jobs_router)
+app.include_router(settings_router)

@@ -44,11 +44,21 @@ def current_svix(_: AdminAccount = Depends(get_current_admin), database: Session
 
 
 @router.get("/history", response_model=list[SVIXPoint])
-def svix_history(start_date: date = Query(...), end_date: date = Query(...), _: AdminAccount = Depends(get_current_admin), database: Session = Depends(get_db)) -> list[SVIXPoint]:
+def svix_history(start_date: date = Query(...), end_date: date = Query(...), frequency: Literal["daily", "weekly"] = "daily", _: AdminAccount = Depends(get_current_admin), database: Session = Depends(get_db)) -> list[SVIXPoint]:
     if end_date < start_date:
         raise HTTPException(status_code=422, detail="end_date must not be before start_date")
     records = SVIXRepository(database).by_time_range(datetime.combine(start_date, time.min, tzinfo=timezone.utc), datetime.combine(end_date, time.max, tzinfo=timezone.utc))
+    if frequency == "weekly":
+        records = [record for record in records if record.timestamp.weekday() == 4]
     return [SVIXPoint(timestamp=record.timestamp, svix=record.svix, core=record.core_vol, memory=record.memory_vol, ai=record.ai_vol, calculation_quality=record.calculation_quality) for record in records]
+
+
+@router.get("/components")
+def svix_components(_: AdminAccount = Depends(get_current_admin), database: Session = Depends(get_db)) -> dict[str, float]:
+    record = SVIXRepository(database).latest()
+    if record is None:
+        raise HTTPException(status_code=404, detail="No SVIX calculation is available")
+    return {"core": record.core_vol, "memory": record.memory_vol, "ai": record.ai_vol}
 
 
 @router.post("/calculate")

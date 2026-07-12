@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     ibkr_client_id: int = Field(default=19, ge=0)
     futu_host: str = "127.0.0.1"
     futu_port: int = Field(default=11111, ge=1, le=65535)
+    redis_url: str = "redis://redis:6379/0"
+    market_refresh_minutes: int = Field(default=15, ge=5, le=1440)
+    svix_calculation_minutes: int = Field(default=15, ge=5, le=1440)
 
     @field_validator("data_provider", mode="before")
     @classmethod

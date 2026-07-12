@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database.database import Base
 from app.database.types import UTCDateTime
@@ -123,3 +123,20 @@ class SVIXHistory(Base):
     ai_vol: Mapped[float] = mapped_column(Float, nullable=False)
     calculation_quality: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+
+
+class CalculationJob(Base):
+    __tablename__ = "calculation_jobs"
+    __table_args__ = (Index("ix_calculation_jobs_status_created_at", "status", "created_at"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    type: Mapped[str] = mapped_column(String(32), nullable=False, default="HISTORICAL_SVIX")
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    frequency: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="PENDING", index=True)
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    result_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+    started_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

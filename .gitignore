@@ -7,3 +7,4 @@ node_modules/
 dist/
 postgres_data/
 frontend/node_modules/
+.pnpm-store/

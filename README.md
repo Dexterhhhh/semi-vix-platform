@@ -1,4 +1,4 @@
-# Semi-VIX Platform — Phase 2
+# Semi-VIX Platform — Phase 4
 
 Semi-VIX 是一个计划自托管部署的半导体波动率分析平台。当前交付 FastAPI、PostgreSQL、单管理员认证、TOTP MFA、JWT 会话、独立的只读行情数据层，以及 VIX 风格 SVIX 计算引擎。不含交易能力或完整前端仪表盘。
 
@@ -132,4 +132,23 @@ Phase 3 新增完全独立于 IBKR/Futu 的计算引擎。它只接收 Phase 2 �
 - `GET /api/svix/history?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD`
 - `POST /api/svix/calculate`，请求体包含 `start_date`、`end_date` 与 `frequency`（`daily` 或 `weekly`）。
 
-历史计算要求每个标的已有足够的期权快照，并至少有 252 个对齐历史收益率；数据不足时会跳过该日期，不会写入零值。任务调度仍将在后续阶段接入。
+历史计算要求每个标的已有足够的期权快照，并至少有 252 个对齐历史收益率；数据不足时会跳过该日期，不会写入零值。
+
+## Dashboard 与后台任务（Phase 4）
+
+Phase 4 将平台扩展为持续运行的自托管分析应用。启动完整栈：
+
+```sh
+docker compose up -d --build
+```
+
+服务包括：Nginx 网关（`http://localhost:8080`）、React Dashboard、FastAPI 后端、Celery Worker、Celery Beat、PostgreSQL 和 Redis。后端健康检查仍可通过 `http://localhost:8000/health` 访问。
+
+仪表盘使用现有用户名、密码和 TOTP MFA 登录，不保存券商凭据或解密后的密钥。登录后可查看 SVIX、Core/Memory/AI 组件、历史曲线、历史计算作业、数据提供商状态与系统状态。
+
+- `POST /api/jobs/create` 创建历史 SVIX 计算任务；Worker 会持续写入作业进度与结果摘要。
+- `GET /api/jobs` 和 `GET /api/jobs/{id}` 查询任务状态。
+- `GET` / `PUT /api/settings` 管理刷新间隔、标的选择与预留手动权重设置；所有设置接口均需要现有 MFA JWT。
+- Celery Beat 默认每 15 分钟安排行情刷新和最新 SVIX 计算；可通过 `MARKET_REFRESH_MINUTES`、`SVIX_CALCULATION_MINUTES` 与 `REDIS_URL` 配置。
+
+Worker 日志采用结构化 JSON 事件，不记录令牌、凭据或券商原始响应。Broker 网关端口不会由 Compose 暴露；浏览器仅经 Nginx 与后端 API 通信。
