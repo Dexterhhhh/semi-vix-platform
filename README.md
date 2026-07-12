@@ -13,6 +13,70 @@ Semi-VIX 是一个计划自托管部署的半导体波动率分析平台。当�
 - SOXX、MU、SKHY、NVDA、AMD、AVGO 的现货、期权合约和期权报价标准化快照
 - AES-256-GCM 加密的提供商凭据、受 MFA 会话保护的提供商配置 API 与配置审计事件
 
+## Ubuntu 服务器一键安装 Docker（新手）
+
+适用于全新的 Ubuntu 22.04 / 24.04 服务器。先通过 SSH 登录服务器，然后执行 Docker 官方便捷安装脚本：
+
+```sh
+curl -fsSL https://get.docker.com -o /tmp/get-docker.sh && sudo sh /tmp/get-docker.sh && sudo usermod -aG docker "$USER"
+```
+
+> Docker 官方将 `get.docker.com` 便捷脚本定位为开发、测试或快速初始化用途。正式生产服务器若有严格的版本锁定与升级要求，应改用 [Docker 官方 Ubuntu APT 仓库安装步骤](https://docs.docker.com/engine/install/ubuntu/)。不要在来源不可信的服务器上直接执行网络脚本；可先运行 `sudo sh /tmp/get-docker.sh --dry-run` 查看将要执行的操作。
+
+安装后退出 SSH 并重新登录，让 Docker 用户组权限生效，然后验证：
+
+```sh
+docker --version
+docker compose version
+docker run --rm hello-world
+```
+
+如果出现 `permission denied`，说明当前 SSH 会话尚未取得新的用户组权限，请重新登录服务器，或暂时在 Docker 命令前加 `sudo`。
+
+### 在 Ubuntu 上部署 Semi-VIX
+
+安装 Git、克隆本项目并创建本地环境文件：
+
+```sh
+sudo apt update && sudo apt install -y git
+git clone https://github.com/YOUR_GITHUB_USERNAME/semi-vix-platform.git
+cd semi-vix-platform
+cp .env.example .env
+nano .env
+```
+
+必须修改 `.env` 中的管理员密码、PostgreSQL 密码以及所有 `SECRET_*`、`CREDENTIAL_MASTER_KEY` 示例值。`.env` 包含敏感信息，绝不能提交到 GitHub。
+
+保存配置后，一条命令构建并启动全部服务：
+
+```sh
+docker compose up -d --build
+```
+
+检查运行状态和健康接口：
+
+```sh
+docker compose ps
+curl -fsS http://localhost:8080/health
+```
+
+不建议把未配置 HTTPS 的 `8080` 端口直接暴露到公网。最简单的安全访问方式是在自己的电脑建立 SSH 隧道：
+
+```sh
+ssh -L 8080:localhost:8080 SERVER_USER@SERVER_IP
+```
+
+保持 SSH 会话开启，然后在本机浏览器访问 `http://localhost:8080`。正式公网部署应在云防火墙中限制来源，并在平台前配置 HTTPS 反向代理。
+
+常用维护命令：
+
+```sh
+docker compose logs -f
+docker compose restart
+docker compose down          # 停止服务，保留 PostgreSQL 数据卷
+docker compose down -v       # 同时删除数据卷；会永久删除数据库，请谨慎使用
+```
+
 ## 本地安装
 
 需要 Python 3.12 和 PostgreSQL。复制环境配置并填入真实随机值：
