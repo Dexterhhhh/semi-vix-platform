@@ -1,8 +1,13 @@
 .git
+.gitignore
+.venv
+.pnpm-store
+**/__pycache__
+**/.pytest_cache
+**/node_modules
+frontend/dist
 .env
 certs/server.crt
 certs/server.key
-**/__pycache__
-**/node_modules
-frontend/dist
 postgres_data
+*.log

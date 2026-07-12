@@ -24,11 +24,13 @@ services:
       retries: 20
 
   backend:
+    image: vix-backend:latest
     build:
       context: .
       dockerfile: backend/Dockerfile
       args:
         INSTALL_FUTU: ${INSTALL_FUTU:-false}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
     restart: unless-stopped
     env_file: .env
     depends_on:
@@ -40,11 +42,7 @@ services:
       - "8000:8000"
 
   worker:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-      args:
-        INSTALL_FUTU: ${INSTALL_FUTU:-false}
+    image: vix-backend:latest
     command: ["celery", "-A", "app.scheduler.celery_app:celery_app", "worker", "--loglevel=INFO"]
     restart: unless-stopped
     env_file: .env
@@ -55,11 +53,7 @@ services:
         condition: service_healthy
 
   beat:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-      args:
-        INSTALL_FUTU: ${INSTALL_FUTU:-false}
+    image: vix-backend:latest
     command: ["celery", "-A", "app.scheduler.celery_app:celery_app", "beat", "--loglevel=INFO"]
     restart: unless-stopped
     env_file: .env
@@ -71,16 +65,19 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
     restart: unless-stopped
 
   nginx:
-    image: nginx:1.27-alpine
+    image: vix-nginx:latest
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
     restart: unless-stopped
     depends_on:
       - frontend
       - backend
-    volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
       - "8080:80"
 
