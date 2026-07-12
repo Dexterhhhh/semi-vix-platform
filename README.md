@@ -47,6 +47,18 @@ nano .env
 
 必须修改 `.env` 中的管理员密码、PostgreSQL 密码以及所有 `SECRET_*`、`CREDENTIAL_MASTER_KEY` 示例值。`.env` 包含敏感信息，绝不能提交到 GitHub。
 
+安装时可以在 `.env` 中自定义面板端口：
+
+```dotenv
+SVIX_BIND_ADDRESS=127.0.0.1
+SVIX_HTTP_PORT=18443
+```
+
+- `SVIX_HTTP_PORT` 填写 `1`～`65535` 的可用端口即可自定义。
+- `SVIX_HTTP_PORT` 留空时，Docker 会自动分配随机可用端口，这是默认行为。
+- `SVIX_BIND_ADDRESS=127.0.0.1` 仅允许服务器本机和 SSH 隧道访问，安全性更高。
+- 只有已配置云防火墙和 HTTPS 反向代理时，才应考虑设置为 `0.0.0.0`。
+
 保存配置后，一条命令构建并启动全部服务：
 
 ```sh
@@ -57,13 +69,19 @@ docker compose up -d --build
 
 ```sh
 docker compose ps
-curl -fsS http://localhost:8080/health
+docker compose port nginx 80
 ```
 
-不建议把未配置 HTTPS 的 `8080` 端口直接暴露到公网。最简单的安全访问方式是在自己的电脑建立 SSH 隧道：
+`docker compose port nginx 80` 会显示实际地址，例如 `127.0.0.1:32768`。使用显示的端口检查健康状态：
 
 ```sh
-ssh -L 8080:localhost:8080 SERVER_USER@SERVER_IP
+curl -fsS http://127.0.0.1:32768/health
+```
+
+不建议把未配置 HTTPS 的面板端口直接暴露到公网。最简单的安全访问方式是在自己的电脑建立 SSH 隧道；把示例中的 `32768` 替换成服务器实际显示的随机或自定义端口：
+
+```sh
+ssh -L 8080:localhost:32768 SERVER_USER@SERVER_IP
 ```
 
 保持 SSH 会话开启，然后在本机浏览器访问 `http://localhost:8080`。正式公网部署应在云防火墙中限制来源，并在平台前配置 HTTPS 反向代理。
@@ -99,7 +117,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-后端监听 `http://localhost:8000`，健康检查地址为 `http://localhost:8000/health`。
+Docker 环境不会向宿主机公开 backend 的 `8000` 端口；健康检查统一通过 Nginx 的随机或自定义面板端口访问。仅在上面的非 Docker 本地开发模式中，FastAPI 才直接监听 `http://localhost:8000`。
 
 ## 环境变量
 
@@ -112,6 +130,8 @@ docker compose up -d --build
 | `JWT_EXPIRE_MINUTES` | 访问令牌有效期，默认 15 分钟 |
 | `REFRESH_EXPIRE_DAYS` | 刷新 Cookie 有效期，默认 7 天 |
 | `CORS_ORIGINS` | 逗号分隔的允许来源 |
+| `SVIX_BIND_ADDRESS` | 面板绑定地址，默认 `127.0.0.1`；不建议无保护地使用 `0.0.0.0` |
+| `SVIX_HTTP_PORT` | 面板宿主机端口；留空时由 Docker 随机分配 |
 | `DATA_PROVIDER` | `IBKR` 或 `FUTU`；启动时严格校验 |
 | `IBKR_HOST` / `IBKR_PORT` / `IBKR_CLIENT_ID` | TWS 或 IB Gateway API socket 地址、端口和客户端 ID |
 | `FUTU_HOST` / `FUTU_PORT` | Futu OpenD 报价服务地址和端口 |
@@ -146,7 +166,7 @@ FUTU_PORT=11111
 CREDENTIAL_MASTER_KEY=<独立的 32 字节 Base64 AES-256-GCM 密钥>
 ```
 
-对于 Docker 内服务，使用 `host.docker.internal` 访问宿主机上的 TWS/IB Gateway 或 Futu OpenD。Compose 默认只公开平台后端的 `8000` 端口，不公开券商网关端口；不要将 TWS、IB Gateway 或 OpenD 暴露到互联网。
+对于 Docker 内服务，使用 `host.docker.internal` 访问宿主机上的 TWS/IB Gateway 或 Futu OpenD。Compose 不公开 FastAPI backend、PostgreSQL、Redis 或券商网关端口；只由 Nginx 提供一个随机或自定义的面板端口。不要将 TWS、IB Gateway 或 OpenD 暴露到互联网。
 
 IBKR 使用 [`ib_insync`](https://ib-insync.readthedocs.io/) 连接 TWS/IB Gateway API socket。需要在网关启用 API 访问、配置相应主机/端口/客户端 ID，并具备美股及期权行情权限。请求仅进行合约发现和行情订阅，快照完成后会取消订阅；不调用任何订单、持仓或资金接口。
 
@@ -206,7 +226,7 @@ Phase 4 将平台扩展为持续运行的自托管分析应用。启动完整栈
 docker compose up -d --build
 ```
 
-服务包括：Nginx 网关（`http://localhost:8080`）、React Dashboard、FastAPI 后端、Celery Worker、Celery Beat、PostgreSQL 和 Redis。后端健康检查仍可通过 `http://localhost:8000/health` 访问。
+服务包括：Nginx 网关、React Dashboard、FastAPI 后端、Celery Worker、Celery Beat、PostgreSQL 和 Redis。FastAPI backend 不再映射固定宿主机端口；使用 `docker compose port nginx 80` 查询面板入口，并通过该入口的 `/health` 执行健康检查。
 
 仪表盘使用现有用户名、密码和 TOTP MFA 登录，不保存券商凭据或解密后的密钥。登录后可查看 SVIX、Core/Memory/AI 组件、历史曲线、历史计算作业、数据提供商状态与系统状态。
 
