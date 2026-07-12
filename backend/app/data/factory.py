@@ -9,11 +9,17 @@ from app.data.providers.ibkr.adapter import IBKRProvider
 from app.data.providers.ibkr.client import IBKRClient
 
 
-def create_provider(provider_name: str | None = None) -> MarketDataProvider:
+def create_provider(
+    provider_name: str | None = None,
+    *,
+    host: str | None = None,
+    port: int | None = None,
+    client_id: int | None = None,
+) -> MarketDataProvider:
     settings = get_settings()
     provider = (provider_name or settings.data_provider).upper()
     if provider == "IBKR":
-        return IBKRProvider(IBKRClient(settings.ibkr_host, settings.ibkr_port, settings.ibkr_client_id))
+        return IBKRProvider(IBKRClient(host or settings.ibkr_host, port or settings.ibkr_port, client_id if client_id is not None else settings.ibkr_client_id))
     if provider == "FUTU":
-        return FutuProvider(FutuClient(settings.futu_host, settings.futu_port))
+        return FutuProvider(FutuClient(host or settings.futu_host, port or settings.futu_port))
     raise ProviderConfigurationError(f"Unsupported DATA_PROVIDER: {provider}")

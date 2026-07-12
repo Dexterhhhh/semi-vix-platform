@@ -57,6 +57,9 @@ class ProviderCredential(Base):
     api_key_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     secret_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     account_identifier_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    host: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    port: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    client_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow, onupdate=utcnow)
@@ -123,6 +126,35 @@ class SVIXHistory(Base):
     ai_vol: Mapped[float] = mapped_column(Float, nullable=False)
     calculation_quality: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+
+
+class SVIXDaily(Base):
+    __tablename__ = "svix_daily"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False, unique=True, index=True)
+    svix_open: Mapped[float] = mapped_column(Float, nullable=False)
+    svix_high: Mapped[float] = mapped_column(Float, nullable=False)
+    svix_low: Mapped[float] = mapped_column(Float, nullable=False)
+    svix_close: Mapped[float] = mapped_column(Float, nullable=False)
+    core_close: Mapped[float] = mapped_column(Float, nullable=False)
+    memory_close: Mapped[float] = mapped_column(Float, nullable=False)
+    ai_close: Mapped[float] = mapped_column(Float, nullable=False)
+    sample_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    min_calculation_quality: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow, onupdate=utcnow)
+
+
+class DataMaintenanceRun(Base):
+    __tablename__ = "data_maintenance_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    option_rows_deleted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    history_rows_aggregated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    daily_rows_written: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
 class CalculationJob(Base):

@@ -1,0 +1,23 @@
+.provider-panel { display: block; }
+.provider-form { display: grid; grid-template-columns: 2fr 2fr 1fr 1fr; gap: 14px; margin-top: 18px; }
+.provider-form label { display: flex; flex-direction: column; gap: 7px; color: #cbd5e1; }
+.provider-form input, .provider-form select { background: #0b1728; border: 1px solid #334155; color: #f8fafc; padding: 10px; border-radius: 8px; }
+.credential-grid { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding-top: 4px; }
+.form-actions { grid-column: 1 / -1; display: flex; gap: 10px; }
+.provider-form > p { grid-column: 1 / -1; margin: 0; }
+.connection-badge { height: max-content; background: #3f2d14; color: #fbbf24; padding: 7px 10px; border-radius: 999px; font-size: .8rem; }
+.connection-badge.online { background: #083b35; color: #5eead4; }
+.provider-form button:disabled { cursor: not-allowed; opacity: .55; }
+.provider-form button.secondary { background: transparent; border: 1px solid #475569; color: #cbd5e1; }
+.success { color: #5eead4 !important; }
+@media (max-width: 800px) { .provider-form, .credential-grid { grid-template-columns: 1fr; } }
+.lifecycle-panel { display: block; }
+.lifecycle-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin: 18px 0; }
+.lifecycle-grid label { display: flex; flex-direction: column; gap: 7px; color: #cbd5e1; }
+.lifecycle-grid input[type="number"], .lifecycle-grid input[type="time"] { background: #0b1728; border: 1px solid #334155; color: #f8fafc; padding: 10px; border-radius: 8px; }
+.lifecycle-grid small, .storage-grid small { color: #64748b; }
+.storage-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.storage-grid div { display: flex; flex-direction: column; gap: 5px; background: #0b1728; border-radius: 10px; padding: 14px; }
+.storage-grid span { color: #94a3b8; }
+@media (max-width: 1000px) { .lifecycle-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 800px) { .lifecycle-grid, .storage-grid { grid-template-columns: 1fr; } }

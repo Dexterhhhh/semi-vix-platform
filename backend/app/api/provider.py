@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import logging
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -35,6 +35,9 @@ class ProviderConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: Literal["IBKR", "FUTU"]
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(ge=1, le=65535)
+    client_id: Optional[int] = Field(default=None, ge=0, le=2147483647)
     credentials: CredentialInput = Field(default_factory=CredentialInput)
 
 
@@ -72,17 +75,17 @@ def _active_provider_name(database: Session) -> Literal["IBKR", "FUTU"]:
 def _configuration_response(provider: Literal["IBKR", "FUTU"], credential: ProviderCredential | None) -> ProviderConfigurationResponse:
     settings = get_settings()
     if provider == "IBKR":
-        return ProviderConfigurationResponse(provider=provider, configured=credential is not None, host=settings.ibkr_host, port=settings.ibkr_port, client_id=settings.ibkr_client_id, credentials_present=bool(credential and (credential.api_key_encrypted or credential.secret_encrypted or credential.account_identifier_encrypted)))
-    return ProviderConfigurationResponse(provider=provider, configured=credential is not None, host=settings.futu_host, port=settings.futu_port, credentials_present=bool(credential and (credential.api_key_encrypted or credential.secret_encrypted or credential.account_identifier_encrypted)))
+        return ProviderConfigurationResponse(provider=provider, configured=credential is not None, host=credential.host if credential and credential.host else settings.ibkr_host, port=credential.port if credential and credential.port else settings.ibkr_port, client_id=credential.client_id if credential and credential.client_id is not None else settings.ibkr_client_id, credentials_present=bool(credential and (credential.api_key_encrypted or credential.secret_encrypted or credential.account_identifier_encrypted)))
+    return ProviderConfigurationResponse(provider=provider, configured=credential is not None, host=credential.host if credential and credential.host else settings.futu_host, port=credential.port if credential and credential.port else settings.futu_port, credentials_present=bool(credential and (credential.api_key_encrypted or credential.secret_encrypted or credential.account_identifier_encrypted)))
 
 
-async def _check_connection(provider: Literal["IBKR", "FUTU"], configured: bool) -> ProviderStatusResponse:
+async def _check_connection(provider: Literal["IBKR", "FUTU"], credential: ProviderCredential | None) -> ProviderStatusResponse:
     checked_at = datetime.now(timezone.utc)
-    if not configured:
+    if credential is None:
         return ProviderStatusResponse(provider=provider, configured=False, connected=False)
     instance = None
     try:
-        instance = create_provider(provider)
+        instance = create_provider(provider, host=credential.host, port=credential.port, client_id=credential.client_id)
         await asyncio.wait_for(instance.connect(), timeout=12)
         connected = await asyncio.wait_for(instance.health_check(), timeout=5)
         return ProviderStatusResponse(provider=provider, configured=True, connected=connected, last_checked_at=checked_at)
@@ -104,7 +107,7 @@ async def _check_connection(provider: Literal["IBKR", "FUTU"], configured: bool)
 @router.get("/status", response_model=ProviderStatusResponse)
 async def provider_status(_: AdminAccount = Depends(get_current_admin), database: Session = Depends(get_db)) -> ProviderStatusResponse:
     credential = _active_credential(database)
-    return await _check_connection(_active_provider_name(database), credential is not None)
+    return await _check_connection(_active_provider_name(database), credential)
 
 
 @router.post("/configure", response_model=ConfigureProviderResponse)
@@ -116,6 +119,9 @@ async def configure_provider(payload: ProviderConfiguration, admin: AdminAccount
         if credential is None:
             credential = ProviderCredential(provider=payload.provider)
             database.add(credential)
+        credential.host = payload.host
+        credential.port = payload.port
+        credential.client_id = payload.client_id if payload.provider == "IBKR" else None
         if values.api_key is not None:
             credential.api_key_encrypted = encrypt_credential(values.api_key)
         if values.secret is not None:
@@ -134,10 +140,11 @@ async def configure_provider(payload: ProviderConfiguration, admin: AdminAccount
 @router.post("/test-connection", response_model=ProviderStatusResponse)
 async def test_provider_connection(_: AdminAccount = Depends(get_current_admin), database: Session = Depends(get_db)) -> ProviderStatusResponse:
     credential = _active_credential(database)
-    return await _check_connection(_active_provider_name(database), credential is not None)
+    return await _check_connection(_active_provider_name(database), credential)
 
 
 @router.get("/configuration", response_model=ProviderConfigurationResponse)
-async def provider_configuration(_: AdminAccount = Depends(get_current_admin), database: Session = Depends(get_db)) -> ProviderConfigurationResponse:
-    credential = _active_credential(database)
-    return _configuration_response(_active_provider_name(database), credential)
+async def provider_configuration(provider: Optional[Literal["IBKR", "FUTU"]] = Query(default=None), _: AdminAccount = Depends(get_current_admin), database: Session = Depends(get_db)) -> ProviderConfigurationResponse:
+    selected = provider or _active_provider_name(database)
+    credential = database.query(ProviderCredential).filter_by(provider=selected).first()
+    return _configuration_response(selected, credential)

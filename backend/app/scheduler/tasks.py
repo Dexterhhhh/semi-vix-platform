@@ -13,6 +13,7 @@ from app.data.exceptions import ProviderUnavailableError
 from app.scheduler.celery_app import celery_app
 from app.services.market_refresh import refresh_market_data
 from app.services.svix_calculator import calculate_svix
+from app.services.data_lifecycle import run_data_maintenance
 
 logger = logging.getLogger(__name__)
 
@@ -72,5 +73,17 @@ def calculate_latest_svix_task(self) -> dict[str, object]:
     try:
         results = calculate_svix(database, today, today, "daily")
         return {"records_calculated": len(results)}
+    finally:
+        database.close()
+
+
+@celery_app.task(bind=True, autoretry_for=(ConnectionError, TimeoutError), retry_backoff=True, retry_kwargs={"max_retries": 3})
+def data_lifecycle_maintenance_task(self, force: bool = False) -> dict[str, object]:
+    started = time.monotonic()
+    database = SessionLocal()
+    try:
+        result = run_data_maintenance(database, force=force)
+        _log("data_lifecycle_maintenance", str(result["status"]).lower(), started, result=result)
+        return result
     finally:
         database.close()

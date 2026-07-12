@@ -15,6 +15,7 @@ from app.data.provider import MarketDataProvider
 from app.data.storage.option_repository import OptionRepository
 from app.data.storage.quote_repository import QuoteRepository
 from app.data.universe import DEFAULT_SYMBOLS as DEFAULT_UNIVERSE
+from app.database.models import ProviderCredential
 
 logger = logging.getLogger(__name__)
 DEFAULT_SYMBOLS = DEFAULT_UNIVERSE
@@ -57,7 +58,13 @@ async def collect_option_snapshot(symbols: Iterable[str], database: Session, pro
     """
 
     requested = list(symbols)
-    market_provider = provider or create_provider()
+    configured = database.query(ProviderCredential).filter_by(enabled=True).first()
+    market_provider = provider or create_provider(
+        configured.provider if configured else None,
+        host=configured.host if configured else None,
+        port=configured.port if configured else None,
+        client_id=configured.client_id if configured else None,
+    )
     summary = CollectionSummary(provider=market_provider.provider_name, started_at=datetime.now(timezone.utc), symbols_requested=len(requested))
     stock_repository = QuoteRepository(database)
     option_repository = OptionRepository(database)

@@ -17,5 +17,6 @@ celery_app.conf.update(
     beat_schedule={
         "market-refresh": {"task": "app.scheduler.tasks.collect_market_data_task", "schedule": settings.market_refresh_minutes * 60},
         "svix-latest-calculation": {"task": "app.scheduler.tasks.calculate_latest_svix_task", "schedule": settings.svix_calculation_minutes * 60},
+        "data-lifecycle-maintenance": {"task": "app.scheduler.tasks.data_lifecycle_maintenance_task", "schedule": 15 * 60},
     },
 )

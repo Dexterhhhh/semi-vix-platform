@@ -1,5 +1,6 @@
 export type SVIXPoint = { timestamp: string; svix: number; core: number; memory: number; ai: number; calculation_quality: number }
 export type Components = { core: number; memory: number; ai: number }
 export type CalculationJob = { id: number; type: string; start_date: string; end_date: string; frequency: 'daily' | 'weekly'; status: string; progress: number; result_summary?: { records_calculated: number }; created_at: string; started_at?: string; finished_at?: string; error_message?: string }
-export type DashboardSettings = { refresh_frequency_minutes: number; selected_symbols: string[]; manual_component_weights?: Record<string, number> }
+export type DashboardSettings = { refresh_frequency_minutes: number; selected_symbols: string[]; manual_component_weights?: Record<string, number>; option_cleanup_enabled: boolean; option_retention_days: number; svix_downsample_enabled: boolean; detailed_retention_days: number; maintenance_time_utc: string }
 export type SystemStatus = { database: string; market_data: string; svix_engine: string; worker: string; last_calculation?: string }
+export type LifecycleStatus = { option_snapshot_rows: number; option_snapshot_bytes: number | null; svix_history_rows: number; svix_history_bytes: number | null; svix_daily_rows: number; svix_daily_bytes: number | null; last_run: null | { status: string; started_at: string; finished_at?: string; option_rows_deleted: number; history_rows_aggregated: number; daily_rows_written: number } }

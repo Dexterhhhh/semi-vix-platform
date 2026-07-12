@@ -1,10 +1,106 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getSettings, saveSettings, getSystemStatus } from '../api/settings'
-import { configureProvider, getProviderStatus, type ProviderName } from '../api/provider'
+import { FormEvent, useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+
+import { configureProvider, getProviderConfiguration, getProviderStatus, testProviderConnection, type ProviderCredentials, type ProviderName } from '../api/provider'
+import { getLifecycleStatus, getSettings, getSystemStatus, runLifecycleMaintenance, saveSettings } from '../api/settings'
+import type { DashboardSettings } from '../types'
+import '../provider.css'
+
 const symbols = ['SOXX', 'MU', 'SKHY', 'NVDA', 'AMD', 'AVGO']
+
 export function Settings() {
-  const query = useQuery({ queryKey: ['settings'], queryFn: getSettings }); const system = useQuery({ queryKey: ['system-status'], queryFn: getSystemStatus, refetchInterval: 10000 }); const provider = useQuery({ queryKey: ['provider-status'], queryFn: getProviderStatus, retry: false }); const client = useQueryClient()
-  const save = useMutation({ mutationFn: saveSettings, onSuccess: () => client.invalidateQueries({ queryKey: ['settings'] }) }); const setProvider = useMutation({ mutationFn: (name: ProviderName) => configureProvider(name), onSuccess: () => client.invalidateQueries({ queryKey: ['provider-status'] }) }); const settings = query.data
-  const toggle = (symbol: string) => settings && save.mutate({ ...settings, selected_symbols: settings.selected_symbols.includes(symbol) ? settings.selected_symbols.filter((item) => item !== symbol) : [...settings.selected_symbols, symbol] })
-  return <main><header><div><p className="eyebrow">CONFIGURATION</p><h1>设置与系统状态</h1></div></header><section className="panel form"><h3>数据提供商</h3><label>提供商<select value={provider.data?.provider ?? 'IBKR'} onChange={(event) => setProvider.mutate(event.target.value as ProviderName)}><option value="IBKR">IBKR</option><option value="FUTU">Futu</option></select></label><p>连接状态：{provider.data?.connected ? '已连接' : provider.data?.configured ? '已配置，未连接' : '未配置'}</p></section><section className="panel form"><h3>计算设置</h3><label>刷新频率<select value={settings?.refresh_frequency_minutes ?? 15} onChange={(event) => settings && save.mutate({ ...settings, refresh_frequency_minutes: Number(event.target.value) })}><option value="5">5 分钟</option><option value="15">15 分钟</option><option value="30">30 分钟</option><option value="1440">每日</option></select></label><p>标的范围</p><div className="symbols">{symbols.map((symbol) => <label key={symbol}><input type="checkbox" checked={settings?.selected_symbols.includes(symbol) ?? false} onChange={() => toggle(symbol)}/> {symbol}</label>)}</div></section><section className="panel"><h3>系统状态</h3>{system.data && Object.entries(system.data).map(([key, value]) => <div className="status-row" key={key}><span>{key}</span><strong>{value ? String(value) : '—'}</strong></div>)}</section></main>
+  const client = useQueryClient()
+  const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: getSettings })
+  const system = useQuery({ queryKey: ['system-status'], queryFn: getSystemStatus, refetchInterval: 10000 })
+  const lifecycle = useQuery({ queryKey: ['lifecycle-status'], queryFn: getLifecycleStatus, refetchInterval: 15000 })
+  const providerStatus = useQuery({ queryKey: ['provider-status'], queryFn: getProviderStatus, retry: false })
+  const [selectedProvider, setSelectedProvider] = useState<ProviderName>('IBKR')
+  const configuration = useQuery({ queryKey: ['provider-configuration', selectedProvider], queryFn: () => getProviderConfiguration(selectedProvider) })
+  const [host, setHost] = useState('')
+  const [port, setPort] = useState('')
+  const [clientId, setClientId] = useState('19')
+  const [apiKey, setApiKey] = useState('')
+  const [secret, setSecret] = useState('')
+  const [accountIdentifier, setAccountIdentifier] = useState('')
+
+  useEffect(() => {
+    if (providerStatus.data?.provider) setSelectedProvider(providerStatus.data.provider)
+  }, [providerStatus.data?.provider])
+
+  useEffect(() => {
+    if (!configuration.data) return
+    setHost(configuration.data.host)
+    setPort(String(configuration.data.port))
+    setClientId(String(configuration.data.client_id ?? 19))
+    setApiKey('')
+    setSecret('')
+    setAccountIdentifier('')
+  }, [configuration.data])
+
+  const saveSettingsMutation = useMutation({ mutationFn: saveSettings, onSuccess: () => client.invalidateQueries({ queryKey: ['settings'] }) })
+  const saveProvider = useMutation({
+    mutationFn: configureProvider,
+    onSuccess: async () => {
+      setApiKey(''); setSecret(''); setAccountIdentifier('')
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['provider-status'] }),
+        client.invalidateQueries({ queryKey: ['provider-configuration', selectedProvider] }),
+        client.invalidateQueries({ queryKey: ['system-status'] }),
+      ])
+    },
+  })
+  const testConnection = useMutation({ mutationFn: testProviderConnection, onSuccess: (status) => client.setQueryData(['provider-status'], status) })
+  const runMaintenance = useMutation({ mutationFn: runLifecycleMaintenance, onSuccess: () => client.invalidateQueries({ queryKey: ['lifecycle-status'] }) })
+  const settings = settingsQuery.data
+  const updateLifecycle = (values: Partial<DashboardSettings>) => settings && saveSettingsMutation.mutate({ ...settings, ...values })
+  const formatSize = (bytes: number | null) => bytes === null ? '—' : `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  const toggle = (symbol: string) => settings && saveSettingsMutation.mutate({ ...settings, selected_symbols: settings.selected_symbols.includes(symbol) ? settings.selected_symbols.filter((item) => item !== symbol) : [...settings.selected_symbols, symbol] })
+
+  const submitProvider = (event: FormEvent) => {
+    event.preventDefault()
+    const credentials: ProviderCredentials = {}
+    if (apiKey) credentials.api_key = apiKey
+    if (secret) credentials.secret = secret
+    if (accountIdentifier) credentials.account_identifier = accountIdentifier
+    saveProvider.mutate({ provider: selectedProvider, host: host.trim(), port: Number(port), ...(selectedProvider === 'IBKR' ? { client_id: Number(clientId) } : {}), credentials })
+  }
+
+  const currentStatus = providerStatus.data
+  const connectionResult = testConnection.data
+  return <main>
+    <header><div><p className="eyebrow">CONFIGURATION</p><h1>设置与系统状态</h1></div></header>
+    <section className="panel provider-panel">
+      <div className="panel-title"><div><h3>数据提供商</h3><p>连接参数和可选凭据由服务器保存；凭据使用 AES-256-GCM 加密且不会回显。</p></div><span className={`connection-badge ${currentStatus?.connected ? 'online' : ''}`}>{currentStatus?.connected ? '已连接' : currentStatus?.configured ? '已配置' : '未配置'}</span></div>
+      <form className="provider-form" onSubmit={submitProvider}>
+        <label>提供商<select value={selectedProvider} onChange={(event) => setSelectedProvider(event.target.value as ProviderName)}><option value="IBKR">Interactive Brokers</option><option value="FUTU">Futu OpenD</option></select></label>
+        <label>{selectedProvider === 'IBKR' ? 'TWS / Gateway Host' : 'OpenD Host'}<input required value={host} onChange={(event) => setHost(event.target.value)} placeholder="host.docker.internal" /></label>
+        <label>端口<input required type="number" min="1" max="65535" value={port} onChange={(event) => setPort(event.target.value)} /></label>
+        {selectedProvider === 'IBKR' && <label>Client ID<input required type="number" min="0" value={clientId} onChange={(event) => setClientId(event.target.value)} /></label>}
+        <div className="credential-grid">
+          <label>API Key（可选）<input type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={configuration.data?.credentials_present ? '已保存；留空保持不变' : '未设置'} /></label>
+          <label>API Secret（可选）<input type="password" autoComplete="off" value={secret} onChange={(event) => setSecret(event.target.value)} placeholder={configuration.data?.credentials_present ? '已保存；留空保持不变' : '未设置'} /></label>
+          <label>账户标识（可选）<input type="password" autoComplete="off" value={accountIdentifier} onChange={(event) => setAccountIdentifier(event.target.value)} placeholder={configuration.data?.credentials_present ? '已保存；留空保持不变' : '未设置'} /></label>
+        </div>
+        <div className="form-actions"><button disabled={saveProvider.isPending || !host || !port} type="submit">{saveProvider.isPending ? '保存中…' : '保存并启用'}</button><button className="secondary" disabled={testConnection.isPending || !currentStatus?.configured} type="button" onClick={() => testConnection.mutate()}>{testConnection.isPending ? '测试中…' : '测试连接'}</button></div>
+        {saveProvider.isSuccess && <p className="success">配置已加密保存并启用。</p>}
+        {saveProvider.isError && <p className="error">保存失败，请检查 Host、端口和凭据格式。</p>}
+        {connectionResult && <p className={connectionResult.connected ? 'success' : 'error'}>{connectionResult.connected ? '连接测试成功。' : `连接失败：${connectionResult.error ?? '服务不可用'}`}</p>}
+      </form>
+    </section>
+    <section className="panel form"><h3>计算设置</h3><label>刷新频率<select value={settings?.refresh_frequency_minutes ?? 15} onChange={(event) => settings && saveSettingsMutation.mutate({ ...settings, refresh_frequency_minutes: Number(event.target.value) })}><option value="5">5 分钟</option><option value="15">15 分钟</option><option value="30">30 分钟</option><option value="1440">每日</option></select></label><p>标的范围</p><div className="symbols">{symbols.map((symbol) => <label key={symbol}><input type="checkbox" checked={settings?.selected_symbols.includes(symbol) ?? false} onChange={() => toggle(symbol)}/> {symbol}</label>)}</div></section>
+    <section className="panel lifecycle-panel">
+      <div className="panel-title"><div><h3>数据生命周期</h3><p>先完成每日聚合，再分批清理已有成功计算覆盖的原始期权数据。</p></div><button className="secondary" disabled={runMaintenance.isPending} onClick={() => runMaintenance.mutate()}>{runMaintenance.isPending ? '已加入队列…' : '立即维护'}</button></div>
+      <div className="lifecycle-grid">
+        <label><span><input type="checkbox" checked={settings?.option_cleanup_enabled ?? true} onChange={(event) => updateLifecycle({ option_cleanup_enabled: event.target.checked })}/> 自动清理期权快照</span><small>仅删除已有计算结果的日期</small></label>
+        <label>原始期权保留天数<input type="number" min="1" max="30" value={settings?.option_retention_days ?? 3} onChange={(event) => updateLifecycle({ option_retention_days: Number(event.target.value) })}/></label>
+        <label><span><input type="checkbox" checked={settings?.svix_downsample_enabled ?? true} onChange={(event) => updateLifecycle({ svix_downsample_enabled: event.target.checked })}/> 自动降采样</span><small>长期保存每日 OHLC</small></label>
+        <label>详细结果保留天数<input type="number" min="1" max="365" value={settings?.detailed_retention_days ?? 7} onChange={(event) => updateLifecycle({ detailed_retention_days: Number(event.target.value) })}/></label>
+        <label>每日维护时间（UTC）<input type="time" value={settings?.maintenance_time_utc ?? '03:30'} onChange={(event) => updateLifecycle({ maintenance_time_utc: event.target.value })}/></label>
+      </div>
+      {lifecycle.data && <div className="storage-grid"><div><span>期权快照</span><strong>{lifecycle.data.option_snapshot_rows.toLocaleString()} 行</strong><small>{formatSize(lifecycle.data.option_snapshot_bytes)}</small></div><div><span>详细 SVIX</span><strong>{lifecycle.data.svix_history_rows.toLocaleString()} 行</strong><small>{formatSize(lifecycle.data.svix_history_bytes)}</small></div><div><span>每日 SVIX</span><strong>{lifecycle.data.svix_daily_rows.toLocaleString()} 行</strong><small>{formatSize(lifecycle.data.svix_daily_bytes)}</small></div></div>}
+      {lifecycle.data?.last_run && <p>最近维护：{lifecycle.data.last_run.status} · 删除期权 {lifecycle.data.last_run.option_rows_deleted} 行 · 聚合详细结果 {lifecycle.data.last_run.history_rows_aggregated} 行</p>}
+      {runMaintenance.isSuccess && <p className="success">维护任务已加入后台队列。</p>}
+    </section>
+    <section className="panel"><h3>系统状态</h3>{system.data && Object.entries(system.data).map(([key, value]) => <div className="status-row" key={key}><span>{key}</span><strong>{value ? String(value) : '—'}</strong></div>)}</section>
+  </main>
 }
