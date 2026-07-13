@@ -18,12 +18,13 @@ from app.database.models import AdminAccount, CalculationJob, DataMaintenanceRun
 from app.data.universe import DEFAULT_SYMBOLS
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
-ALLOWED_KEYS = {"refresh_frequency_minutes", "selected_symbols", "manual_component_weights", "option_cleanup_enabled", "option_retention_days", "svix_downsample_enabled", "detailed_retention_days", "maintenance_time_utc"}
+ALLOWED_KEYS = {"refresh_frequency_minutes", "intraday_refresh_seconds", "selected_symbols", "manual_component_weights", "option_cleanup_enabled", "option_retention_days", "svix_downsample_enabled", "detailed_retention_days", "maintenance_time_utc"}
 
 
 class SettingsPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     refresh_frequency_minutes: int = Field(default=15, ge=5, le=1440)
+    intraday_refresh_seconds: int = Field(default=300, ge=30, le=3600)
     selected_symbols: list[str] = Field(default_factory=lambda: list(DEFAULT_SYMBOLS))
     manual_component_weights: Optional[dict[str, float]] = None
     option_cleanup_enabled: bool = True
@@ -47,6 +48,7 @@ def _load(database: Session) -> SettingsPayload:
     settings = get_settings()
     return SettingsPayload(
         refresh_frequency_minutes=values.get("refresh_frequency_minutes", settings.market_refresh_minutes),
+        intraday_refresh_seconds=values.get("intraday_refresh_seconds", values.get("refresh_frequency_minutes", settings.market_refresh_minutes) * 60),
         selected_symbols=values.get("selected_symbols", list(DEFAULT_SYMBOLS)),
         manual_component_weights=values.get("manual_component_weights"),
         option_cleanup_enabled=values.get("option_cleanup_enabled", True),

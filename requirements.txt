@@ -8,9 +8,11 @@ passlib[argon2]==1.7.4
 pyotp==2.9.0
 PyJWT==2.10.1
 cryptography==44.0.2
+httpx==0.28.1
 ib_insync==0.9.86
 numpy==1.26.4
 pandas==2.2.3
+pandas-market-calendars==5.4.0
 scipy==1.13.1
 celery[redis]==5.4.0
 redis==5.2.1

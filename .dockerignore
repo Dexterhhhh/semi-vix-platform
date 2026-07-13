@@ -7,7 +7,15 @@
 **/node_modules
 frontend/dist
 .env
+.env.*
+!.env.example
 certs/server.crt
 certs/server.key
 postgres_data
 *.log
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.sql
+backups

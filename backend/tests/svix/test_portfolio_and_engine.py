@@ -1,4 +1,5 @@
 import math
+from datetime import timedelta
 
 import numpy as np
 import pytest
@@ -30,6 +31,33 @@ def test_engine_regression_fixture_calculates_full_svix() -> None:
     assert len(result.correlation_matrix) == 6
 
 
+def test_engine_reweights_when_newly_listed_memory_asset_is_unavailable() -> None:
+    symbols = ("SOXX", "MU", "NVDA", "AMD", "AVGO")
+    option_quotes = {symbol: [quote.model_copy(update={"delayed": True}) for quote in two_expiry_chain(symbol)] for symbol in symbols}
+    returns = {symbol: (0.001 * np.sin(np.arange(260) / (index + 2)) + 0.0001 * index).tolist() for index, symbol in enumerate(symbols)}
+    result = SVIXEngine().calculate(option_quotes, returns, VALUATION_TIME)
+    assert "SKHY" not in result.weights
+    assert math.isclose(sum(result.weights.values()), 1.0)
+    assert result.memory_vol > 0
+    assert 0 < result.calculation_quality < 0.65
+
+
 def test_weighted_correlation_requires_historical_windows() -> None:
     with pytest.raises(Exception):
         calculate_correlation_matrix({"A": [0.01] * 60, "B": [0.02] * 60})
+
+
+def test_approximate_engine_uses_spot_forward_and_single_valid_expiry() -> None:
+    symbols = ("SOXX", "MU", "NVDA", "AMD", "AVGO")
+    expiry = VALUATION_TIME + timedelta(days=24)
+    option_quotes = {}
+    for symbol in symbols:
+        chain = two_expiry_chain(symbol)
+        first_expiry = min(quote.expiry for quote in chain)
+        sparse = [quote.model_copy(update={"delayed": True}) for quote in chain if quote.expiry == first_expiry and ((quote.option_type == "P" and quote.strike < 100) or (quote.option_type == "C" and quote.strike >= 100))]
+        option_quotes[symbol] = [quote.model_copy(update={"expiry": expiry}) for quote in sparse]
+    returns = {symbol: (0.001 * np.sin(np.arange(260) / (index + 2)) + 0.0001 * index).tolist() for index, symbol in enumerate(symbols)}
+    result = SVIXEngine().calculate(option_quotes, returns, VALUATION_TIME, underlying_prices={symbol: 100.0 for symbol in symbols}, approximate=True)
+    assert result.svix > 0
+    assert result.estimated is True
+    assert result.calculation_quality < 0.2

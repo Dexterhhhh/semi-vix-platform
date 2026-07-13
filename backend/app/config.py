@@ -21,12 +21,14 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     cookie_secure: bool = True
     rate_limit_per_minute: int = 10
-    data_provider: Literal["IBKR", "FUTU"] = "IBKR"
+    data_provider: Literal["IBKR", "FUTU", "ALPACA"] = "IBKR"
     ibkr_host: str = "127.0.0.1"
     ibkr_port: int = Field(default=7497, ge=1, le=65535)
     ibkr_client_id: int = Field(default=19, ge=0)
     futu_host: str = "127.0.0.1"
     futu_port: int = Field(default=11111, ge=1, le=65535)
+    alpaca_base_url: str = "https://data.alpaca.markets"
+    alpaca_feed: Literal["indicative", "opra"] = "indicative"
     redis_url: str = "redis://redis:6379/0"
     market_refresh_minutes: int = Field(default=15, ge=5, le=1440)
     svix_calculation_minutes: int = Field(default=15, ge=5, le=1440)
@@ -35,6 +37,11 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_provider(cls, value: str) -> str:
         return str(value).strip().upper()
+
+    @field_validator("alpaca_feed", mode="before")
+    @classmethod
+    def normalize_alpaca_feed(cls, value: str) -> str:
+        return str(value).strip().lower()
 
     @field_validator("secret_encryption_key", "credential_master_key", mode="before")
     @classmethod

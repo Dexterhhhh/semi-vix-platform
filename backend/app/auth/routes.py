@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+import hashlib
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.auth.crypto import encrypt
@@ -11,7 +12,7 @@ from app.auth.mfa import encrypted_backup_codes, generate_totp_secret, provision
 from app.auth.password import verify_password
 from app.config import get_settings
 from app.database.database import get_db
-from app.database.models import AdminAccount, AdminSecurity
+from app.database.models import AdminAccount, AdminSecurity, SessionRecord
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
@@ -37,6 +38,11 @@ def _token_response(response: Response, database: Session, admin: AdminAccount, 
     database.commit()
     response.set_cookie("svix_refresh", refresh, httponly=True, secure=settings.cookie_secure, samesite="strict", max_age=settings.refresh_expire_days * 86400, path="/api/auth")
     return {"access_token": create_access_token(admin), "token_type": "bearer", "expires_in": settings.jwt_expire_minutes * 60}
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    settings = get_settings()
+    response.delete_cookie("svix_refresh", httponly=True, secure=settings.cookie_secure, samesite="strict", path="/api/auth")
 
 
 @router.post("/login")
@@ -77,6 +83,40 @@ async def verify_mfa(payload: VerifyMFARequest, response: Response, request: Req
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid TOTP code")
     admin.last_login = datetime.now(timezone.utc)
     return _token_response(response, database, admin, request)
+
+
+@router.post("/refresh")
+async def refresh_session(response: Response, request: Request, svix_refresh: Optional[str] = Cookie(default=None), database: Session = Depends(get_db)) -> dict[str, Any]:
+    if not svix_refresh:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh session is unavailable")
+    token_hash = hashlib.sha256(svix_refresh.encode()).hexdigest()
+    session = database.query(SessionRecord).filter_by(refresh_token_hash=token_hash).first()
+    if session is None or session.expires_at <= datetime.now(timezone.utc):
+        if session is not None:
+            database.delete(session)
+            database.commit()
+        _clear_refresh_cookie(response)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh session is invalid or expired")
+    admin = database.query(AdminAccount).filter_by(is_active=True).first()
+    if admin is None:
+        database.delete(session)
+        database.commit()
+        _clear_refresh_cookie(response)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Account unavailable")
+    database.delete(session)
+    return _token_response(response, database, admin, request)
+
+
+@router.post("/logout")
+async def logout(response: Response, svix_refresh: Optional[str] = Cookie(default=None), database: Session = Depends(get_db)) -> dict[str, str]:
+    if svix_refresh:
+        token_hash = hashlib.sha256(svix_refresh.encode()).hexdigest()
+        session = database.query(SessionRecord).filter_by(refresh_token_hash=token_hash).first()
+        if session is not None:
+            database.delete(session)
+            database.commit()
+    _clear_refresh_cookie(response)
+    return {"status": "logged_out"}
 
 
 @router.get("/me")

@@ -52,11 +52,18 @@ def test_provider_routes_require_authentication_and_never_echo_credentials(monke
         assert status.status_code == 200
         assert status.json()["connected"] is False
         assert status.json()["error"] == "Provider unavailable"
+
+        alpaca = client.post("/api/provider/configure", headers=headers, json={"provider": "ALPACA", "host": "https://data.alpaca.markets", "port": 443, "data_feed": "indicative", "credentials": {"api_key": "alpaca-key", "secret": "alpaca-secret"}})
+        assert alpaca.status_code == 200
+        alpaca_configuration = client.get("/api/provider/configuration", headers=headers, params={"provider": "ALPACA"}).json()
+        assert alpaca_configuration["data_feed"] == "indicative"
+        assert alpaca_configuration["production_ready"] is False
+        assert "alpaca-secret" not in str(alpaca_configuration)
     from app.database.database import SessionLocal
 
     database = SessionLocal()
     try:
-        assert database.query(AuditEvent).filter_by(action="provider.configure").count() == 1
-        assert database.query(ProviderCredential).one().secret_encrypted != secret
+        assert database.query(AuditEvent).filter_by(action="provider.configure").count() == 2
+        assert all(item.secret_encrypted not in {secret, "alpaca-secret"} for item in database.query(ProviderCredential).all())
     finally:
         database.close()

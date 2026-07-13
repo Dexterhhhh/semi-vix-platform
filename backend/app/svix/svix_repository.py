@@ -17,14 +17,20 @@ class SVIXRepository:
     def save(self, result: SVIXResult) -> SVIXHistory:
         record = self.database.query(SVIXHistory).filter_by(timestamp=result.timestamp).first()
         if record is None:
-            record = SVIXHistory(timestamp=result.timestamp, svix=result.svix, core_vol=result.core_vol, memory_vol=result.memory_vol, ai_vol=result.ai_vol, calculation_quality=result.calculation_quality)
+            record = SVIXHistory(timestamp=result.timestamp, svix=result.svix, core_vol=result.core_vol, memory_vol=result.memory_vol, ai_vol=result.ai_vol, calculation_quality=result.calculation_quality, estimated=result.estimated, source_feed=result.source_feed)
             self.database.add(record)
+            return record
+        # A later historical backfill must never downgrade a strict result at
+        # the same market timestamp to an estimated result.
+        if not record.estimated and result.estimated:
             return record
         record.svix = result.svix
         record.core_vol = result.core_vol
         record.memory_vol = result.memory_vol
         record.ai_vol = result.ai_vol
         record.calculation_quality = result.calculation_quality
+        record.estimated = result.estimated
+        record.source_feed = result.source_feed
         return record
 
     def latest(self) -> SVIXHistory | None:

@@ -15,8 +15,10 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     task_acks_late=True,
     beat_schedule={
-        "market-refresh": {"task": "app.scheduler.tasks.collect_market_data_task", "schedule": settings.market_refresh_minutes * 60},
-        "svix-latest-calculation": {"task": "app.scheduler.tasks.calculate_latest_svix_task", "schedule": settings.svix_calculation_minutes * 60},
+        # The task itself reads the live interval from PostgreSQL and checks the
+        # NYSE session. A one-minute heartbeat makes panel changes effective
+        # without restarting Celery Beat.
+        "market-refresh": {"task": "app.scheduler.tasks.collect_market_data_task", "schedule": 10},
         "data-lifecycle-maintenance": {"task": "app.scheduler.tasks.data_lifecycle_maintenance_task", "schedule": 15 * 60},
     },
 )

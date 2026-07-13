@@ -1,4 +1,4 @@
 import type { CalculationJob } from '../types'
 export function JobProgress({ job }: { job: CalculationJob }) {
-  return <div className="job"><div><strong>{job.type}</strong><span>{job.status}</span></div><div className="progress"><i style={{ width: `${job.progress}%` }} /></div><small>{job.start_date} → {job.end_date} · {job.progress}%</small></div>
+  return <div className="job"><div><strong>{job.type}</strong><span>{job.status}</span></div><div className="progress"><i style={{ width: `${job.progress}%` }} /></div><small>{job.start_date} → {job.end_date} · {job.progress}%{job.result_summary?.stage ? ` · ${job.result_summary.stage}` : ''}</small>{job.status === 'FAILED' && <p className="error">{job.error_message ?? '计算失败，请查看 Worker 日志。'}</p>}{job.status === 'COMPLETED' && <p className="success">生成 {job.result_summary?.records_calculated ?? 0} 条结果{job.result_summary?.estimated_records !== undefined ? ` · 近似 ${job.result_summary.estimated_records} 条` : ''}{job.result_summary?.skipped_records ? ` · 跳过 ${job.result_summary.skipped_records} 天` : ''}</p>}</div>
 }

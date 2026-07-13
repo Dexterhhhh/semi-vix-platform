@@ -8,7 +8,7 @@ import json
 
 from sqlalchemy.orm import Session
 
-from app.database.models import DataMaintenanceRun, OptionSnapshot, SVIXDaily, SVIXHistory, SystemSettings
+from app.database.models import CustomIndexDaily, CustomIndexHistory, DataMaintenanceRun, OptionSnapshot, SVIXDaily, SVIXHistory, SystemSettings
 
 DEFAULT_POLICY = {
     "option_cleanup_enabled": True,
@@ -49,6 +49,24 @@ def _upsert_daily(database: Session, calculation_date: date, rows: list[SVIXHist
     record.ai_close = ordered[-1].ai_vol
     record.sample_count = len(ordered)
     record.min_calculation_quality = min(row.calculation_quality for row in ordered)
+    record.estimated = ordered[-1].estimated
+    record.source_feed = ordered[-1].source_feed
+
+
+def _upsert_custom_daily(database: Session, custom_index_id: int, version_id: int, calculation_date: date, rows: list[CustomIndexHistory]) -> None:
+    ordered = sorted(rows, key=lambda row: row.timestamp)
+    record = database.query(CustomIndexDaily).filter_by(custom_index_id=custom_index_id, version_id=version_id, date=calculation_date).first()
+    if record is None:
+        record = CustomIndexDaily(custom_index_id=custom_index_id, version_id=version_id, date=calculation_date)
+        database.add(record)
+    record.value_open = ordered[0].value
+    record.value_high = max(row.value for row in ordered)
+    record.value_low = min(row.value for row in ordered)
+    record.value_close = ordered[-1].value
+    record.sample_count = len(ordered)
+    record.min_calculation_quality = min(row.calculation_quality for row in ordered)
+    record.estimated = ordered[-1].estimated
+    record.source_feed = ordered[-1].source_feed
 
 
 def _delete_ids_in_batches(database: Session, model, ids: list[int], batch_size: int) -> int:
@@ -89,6 +107,15 @@ def run_data_maintenance(database: Session, *, now: datetime | None = None, forc
             database.commit()
             daily_written = len(grouped)
             history_aggregated = _delete_ids_in_batches(database, SVIXHistory, [row.id for row in old_history], batch_size)
+            old_custom = database.query(CustomIndexHistory).filter(CustomIndexHistory.timestamp < history_cutoff).order_by(CustomIndexHistory.timestamp.asc()).all()
+            custom_grouped: dict[tuple[int, int, date], list[CustomIndexHistory]] = defaultdict(list)
+            for row in old_custom:
+                custom_grouped[(row.custom_index_id, row.version_id, row.timestamp.date())].append(row)
+            for (custom_index_id, version_id, calculation_date), rows in custom_grouped.items():
+                _upsert_custom_daily(database, custom_index_id, version_id, calculation_date, rows)
+            database.commit()
+            daily_written += len(custom_grouped)
+            history_aggregated += _delete_ids_in_batches(database, CustomIndexHistory, [row.id for row in old_custom], batch_size)
 
         if bool(policy["option_cleanup_enabled"]):
             option_cutoff = now - timedelta(days=int(policy["option_retention_days"]))

@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date, datetime
+import logging
 from typing import Any
 
 from app.data.exceptions import ProviderUnavailableError
+
+logger = logging.getLogger(__name__)
 
 
 class FutuClient:
@@ -67,13 +70,24 @@ class FutuClient:
         return self._context
 
     def _stock_quote_sync(self, symbol: str) -> dict[str, Any]:
-        from futu import RET_OK
+        from futu import RET_OK, SubType
 
-        result, data = self._require_context().get_stock_quote([f"US.{symbol}"])
-        if result != RET_OK or data.empty:
-            raise ProviderUnavailableError(f"Futu quote unavailable for {symbol}")
-        row = data.iloc[0]
-        return {"price": row.get("last_price"), "bid": row.get("bid_price"), "ask": row.get("ask_price"), "volume": row.get("volume"), "delayed": None}
+        context = self._require_context()
+        code = f"US.{symbol}"
+        result, _ = context.subscribe([code], [SubType.QUOTE], subscribe_push=False)
+        if result != RET_OK:
+            raise ProviderUnavailableError(f"Futu quote subscription failed for {symbol}")
+        try:
+            result, data = context.get_stock_quote([code])
+            if result != RET_OK or data.empty:
+                raise ProviderUnavailableError(f"Futu quote unavailable for {symbol}")
+            row = data.iloc[0]
+            return {"price": row.get("last_price"), "bid": row.get("bid_price"), "ask": row.get("ask_price"), "volume": row.get("volume"), "delayed": None}
+        finally:
+            try:
+                context.unsubscribe([code], [SubType.QUOTE])
+            except Exception:
+                logger.warning("Futu quote unsubscribe failed for %s", symbol)
 
     async def stock_quote(self, symbol: str) -> dict[str, Any]:
         return await self._run(self._stock_quote_sync, symbol)

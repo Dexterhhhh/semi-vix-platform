@@ -16,7 +16,7 @@ class ForwardResult(SVIXModel):
     forward_price: float = Field(gt=0)
     reference_strike: float = Field(gt=0)
     quality_score: float = Field(ge=0, le=1)
-    pair_count: int = Field(ge=1)
+    pair_count: int = Field(ge=0)
 
 
 class K0Result(SVIXModel):
@@ -86,3 +86,5 @@ class SVIXResult(SVIXModel):
     weights: Dict[str, float]
     correlation_matrix: List[List[float]]
     calculation_quality: float = Field(ge=0, le=1)
+    estimated: bool = False
+    source_feed: Optional[str] = None

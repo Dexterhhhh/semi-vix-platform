@@ -83,7 +83,8 @@ class OptionContract(_MarketDataModel):
     @classmethod
     def validate_strike(cls, value: float) -> float:
         result = cls._finite(value, "strike")
-        assert result is not None
+        if result is None:
+            raise ValueError("strike is required")
         return result
 
     @field_validator("currency", mode="before")

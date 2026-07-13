@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from typing import Optional
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database.database import Base
 from app.database.types import UTCDateTime
@@ -60,6 +60,7 @@ class ProviderCredential(Base):
     host: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     port: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     client_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    data_feed: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow, onupdate=utcnow)
@@ -125,6 +126,8 @@ class SVIXHistory(Base):
     memory_vol: Mapped[float] = mapped_column(Float, nullable=False)
     ai_vol: Mapped[float] = mapped_column(Float, nullable=False)
     calculation_quality: Mapped[float] = mapped_column(Float, nullable=False)
+    estimated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    source_feed: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
 
 
@@ -141,6 +144,8 @@ class SVIXDaily(Base):
     ai_close: Mapped[float] = mapped_column(Float, nullable=False)
     sample_count: Mapped[int] = mapped_column(Integer, nullable=False)
     min_calculation_quality: Mapped[float] = mapped_column(Float, nullable=False)
+    estimated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    source_feed: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow, onupdate=utcnow)
 
@@ -152,6 +157,23 @@ class DataMaintenanceRun(Base):
     option_rows_deleted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     history_rows_aggregated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     daily_rows_written: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class MarketCollectionRun(Base):
+    __tablename__ = "market_collection_runs"
+    __table_args__ = (Index("ix_market_collection_session_started", "session_date", "started_at"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=300)
+    stock_quotes_saved: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    option_quotes_saved: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    symbols_succeeded: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    symbols_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     started_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
     finished_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -172,3 +194,75 @@ class CalculationJob(Base):
     started_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class CustomIndex(Base):
+    __tablename__ = "custom_indices"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    missing_policy: Mapped[str] = mapped_column(String(16), nullable=False, default="STRICT")
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow, onupdate=utcnow)
+
+
+class CustomIndexVersion(Base):
+    __tablename__ = "custom_index_versions"
+    __table_args__ = (UniqueConstraint("custom_index_id", "version_number", name="uq_custom_index_version"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    custom_index_id: Mapped[int] = mapped_column(ForeignKey("custom_indices.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    missing_policy: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+
+
+class CustomIndexComponent(Base):
+    __tablename__ = "custom_index_components"
+    __table_args__ = (
+        UniqueConstraint("version_id", "symbol", name="uq_custom_index_component_symbol"),
+        CheckConstraint("weight > 0 AND weight <= 1", name="custom_index_component_weight_range"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("custom_index_versions.id", ondelete="CASCADE"), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    weight: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class CustomIndexHistory(Base):
+    __tablename__ = "custom_index_history"
+    __table_args__ = (
+        UniqueConstraint("custom_index_id", "version_id", "timestamp", name="uq_custom_index_history_point"),
+        Index("ix_custom_index_history_index_timestamp", "custom_index_id", "timestamp"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    custom_index_id: Mapped[int] = mapped_column(ForeignKey("custom_indices.id", ondelete="CASCADE"), nullable=False)
+    version_id: Mapped[int] = mapped_column(ForeignKey("custom_index_versions.id", ondelete="CASCADE"), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    calculation_quality: Mapped[float] = mapped_column(Float, nullable=False)
+    estimated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    source_feed: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+
+
+class CustomIndexDaily(Base):
+    __tablename__ = "custom_index_daily"
+    __table_args__ = (
+        UniqueConstraint("custom_index_id", "version_id", "date", name="uq_custom_index_daily_point"),
+        Index("ix_custom_index_daily_index_date", "custom_index_id", "date"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    custom_index_id: Mapped[int] = mapped_column(ForeignKey("custom_indices.id", ondelete="CASCADE"), nullable=False)
+    version_id: Mapped[int] = mapped_column(ForeignKey("custom_index_versions.id", ondelete="CASCADE"), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    value_open: Mapped[float] = mapped_column(Float, nullable=False)
+    value_high: Mapped[float] = mapped_column(Float, nullable=False)
+    value_low: Mapped[float] = mapped_column(Float, nullable=False)
+    value_close: Mapped[float] = mapped_column(Float, nullable=False)
+    sample_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    min_calculation_quality: Mapped[float] = mapped_column(Float, nullable=False)
+    estimated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    source_feed: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow, onupdate=utcnow)
