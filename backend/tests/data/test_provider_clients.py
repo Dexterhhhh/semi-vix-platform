@@ -21,10 +21,12 @@ def test_futu_client_releases_mocked_quote_subscription(monkeypatch) -> None:
         last = None
 
         def __init__(self, **_):
+            self.subscribed = []
             self.unsubscribed = []
             FakeContext.last = self
 
-        def subscribe(self, *_args, **_kwargs):
+        def subscribe(self, codes, subtypes, **_kwargs):
+            self.subscribed.append((codes, subtypes))
             return 0, None
 
         def get_stock_quote(self, _codes):
@@ -43,9 +45,12 @@ def test_futu_client_releases_mocked_quote_subscription(monkeypatch) -> None:
     async def check() -> None:
         client = FutuClient("127.0.0.1", 11111)
         await client.connect()
+        stock = await client.stock_quote("NVDA")
+        assert stock["price"] == 1.1
+        assert FakeContext.last.subscribed == [(["US.NVDA"], ["QUOTE"])]
         quote = await client.option_quote("US.NVDA260821C00100000")
         assert quote["last"] == 1.1
-        assert FakeContext.last.unsubscribed == [(["US.NVDA260821C00100000"], ["QUOTE"])]
+        assert FakeContext.last.unsubscribed == [(["US.NVDA"], ["QUOTE"]), (["US.NVDA260821C00100000"], ["QUOTE"])]
         await client.disconnect()
         await client.disconnect()
     asyncio.run(check())

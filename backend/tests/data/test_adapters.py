@@ -8,6 +8,8 @@ from app.data.factory import create_provider
 from app.data.provider import MarketDataProvider
 from app.data.providers.futu.adapter import FutuProvider
 from app.data.providers.ibkr.adapter import IBKRProvider
+from app.data.providers.alpaca.adapter import AlpacaProvider
+from app.data.providers.alpaca.client import AlpacaClient
 
 
 class FakeIBKRClient:
@@ -63,5 +65,49 @@ def test_unsupported_symbol_and_factory_configuration_fail_predictably() -> None
     asyncio.run(check())
     assert isinstance(create_provider("IBKR"), MarketDataProvider)
     assert isinstance(create_provider("FUTU"), MarketDataProvider)
+    assert isinstance(create_provider("ALPACA", api_key="key", secret="secret"), MarketDataProvider)
+    with pytest.raises(ProviderConfigurationError):
+        create_provider("ALPACA")
     with pytest.raises(ProviderConfigurationError):
         create_provider("unsupported")
+
+
+def test_alpaca_adapter_marks_indicative_quotes_as_delayed(monkeypatch) -> None:
+    async def fake_request(self, path: str, params=None):
+        if path.endswith("/snapshot") and "/stocks/" in path:
+            return {"latestTrade": {"p": 100.0, "t": "2026-07-10T15:30:00Z"}, "latestQuote": {"bp": 99.9, "ap": 100.1, "t": "2026-07-10T15:30:01Z"}}
+        return {"snapshots": {"NVDA260821C00100000": {"latestQuote": {"bp": 3.0, "ap": 3.2, "t": "2026-07-10T15:30:01Z"}, "latestTrade": {"p": 3.1}, "impliedVolatility": 0.4}}}
+
+    monkeypatch.setattr(AlpacaClient, "_request", fake_request)
+
+    async def check() -> None:
+        provider = AlpacaProvider(AlpacaClient("key", "secret", "indicative"))
+        await provider.connect()
+        assert await provider.health_check()
+        stock = await provider.get_stock_quote("NVDA")
+        contract = (await provider.get_option_chain("NVDA"))[0]
+        quote = await provider.get_option_quote(contract)
+        assert stock.delayed is True
+        assert contract.contract_id == "ALPACA:NVDA260821C00100000"
+        assert quote.bid == 3.0
+        assert quote.delayed is True
+        await provider.disconnect()
+
+    asyncio.run(check())
+
+
+def test_alpaca_adapter_normalizes_modified_crossed_market(monkeypatch) -> None:
+    async def fake_request(self, path: str, params=None):
+        return {"latestTrade": {"p": 100.0}, "latestQuote": {"bp": 101.0, "ap": 99.0}}
+
+    monkeypatch.setattr(AlpacaClient, "_request", fake_request)
+
+    async def check() -> None:
+        provider = AlpacaProvider(AlpacaClient("key", "secret", "indicative"))
+        await provider.connect()
+        quote = await provider.get_stock_quote("AMD")
+        assert quote.bid == 99.0
+        assert quote.ask == 101.0
+        await provider.disconnect()
+
+    asyncio.run(check())

@@ -11,6 +11,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.data.factory import create_provider
+from app.data.credentials import decrypt_credential
 from app.data.provider import MarketDataProvider
 from app.data.storage.option_repository import OptionRepository
 from app.data.storage.quote_repository import QuoteRepository
@@ -64,6 +65,9 @@ async def collect_option_snapshot(symbols: Iterable[str], database: Session, pro
         host=configured.host if configured else None,
         port=configured.port if configured else None,
         client_id=configured.client_id if configured else None,
+        api_key=decrypt_credential(configured.api_key_encrypted) if configured and configured.api_key_encrypted else None,
+        secret=decrypt_credential(configured.secret_encrypted) if configured and configured.secret_encrypted else None,
+        data_feed=configured.data_feed if configured else None,
     )
     summary = CollectionSummary(provider=market_provider.provider_name, started_at=datetime.now(timezone.utc), symbols_requested=len(requested))
     stock_repository = QuoteRepository(database)

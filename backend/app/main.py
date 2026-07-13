@@ -7,6 +7,7 @@ from app.api.provider import router as provider_router
 from app.api.svix import router as svix_router
 from app.api.jobs_routes import router as jobs_router
 from app.api.settings_routes import router as settings_router
+from app.api.custom_index import router as custom_index_router
 from app.auth.password import hash_password
 from app.auth.routes import router as auth_router
 from app.config import get_settings
@@ -35,7 +36,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Semi-VIX Platform", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Semi-VIX Platform", version="0.2.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=get_settings().allowed_origins, allow_credentials=True, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -43,3 +44,4 @@ app.include_router(provider_router)
 app.include_router(svix_router)
 app.include_router(jobs_router)
 app.include_router(settings_router)
+app.include_router(custom_index_router)

@@ -20,3 +20,12 @@ def test_mfa_setup_and_verification() -> None:
         second_login = client.post("/api/auth/login", json={"username": "admin", "password": "test-password"}).json()
         verified = client.post("/api/auth/verify-mfa", json={"temporary_token": second_login["temporary_token"], "totp_code": pyotp.TOTP(secret).now()})
         assert verified.status_code == 200
+        refresh_before = client.cookies.get("svix_refresh")
+        assert refresh_before
+        refreshed = client.post("/api/auth/refresh")
+        assert refreshed.status_code == 200
+        assert client.cookies.get("svix_refresh") != refresh_before
+        refreshed_access = refreshed.json()["access_token"]
+        assert client.get("/api/auth/me", headers={"Authorization": f"Bearer {refreshed_access}"}).status_code == 200
+        assert client.post("/api/auth/logout").json() == {"status": "logged_out"}
+        assert client.post("/api/auth/refresh").status_code == 401

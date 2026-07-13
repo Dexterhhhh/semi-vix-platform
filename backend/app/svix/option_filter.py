@@ -25,7 +25,7 @@ def strike_intervals(strikes: list[float]) -> dict[float, float]:
     return intervals
 
 
-def filter_otm_options(symbol: str, expiry, quotes: Iterable[OptionQuote], k0: K0Result, forward: ForwardResult, allow_last_price_fallback: bool = False) -> FilteredOptionSet:
+def filter_otm_options(symbol: str, expiry, quotes: Iterable[OptionQuote], k0: K0Result, forward: ForwardResult, allow_last_price_fallback: bool = False, allow_unpaired_k0: bool = False) -> FilteredOptionSet:
     """Choose puts below K0, calls above K0, and the call/put average at K0."""
     pairs: dict[float, dict[str, float]] = defaultdict(dict)
     for quote in quotes:
@@ -33,7 +33,7 @@ def filter_otm_options(symbol: str, expiry, quotes: Iterable[OptionQuote], k0: K
         if mid is not None:
             pairs[quote.strike][quote.option_type] = mid
     k0_pair = pairs.get(k0.strike, {})
-    if "C" not in k0_pair or "P" not in k0_pair:
+    if not allow_unpaired_k0 and ("C" not in k0_pair or "P" not in k0_pair):
         raise InsufficientOptionData("K0 requires both a valid call and put midpoint")
     selected: dict[float, tuple[str, float]] = {}
     for strike, values in pairs.items():
@@ -43,6 +43,11 @@ def filter_otm_options(symbol: str, expiry, quotes: Iterable[OptionQuote], k0: K
             selected[strike] = ("C", values["C"])
         elif strike == k0.strike and "C" in values and "P" in values:
             selected[strike] = ("K0", (values["C"] + values["P"]) / 2.0)
+        elif strike == k0.strike and allow_unpaired_k0:
+            if "C" in values:
+                selected[strike] = ("K0-C", values["C"])
+            elif "P" in values:
+                selected[strike] = ("K0-P", values["P"])
     intervals = strike_intervals(list(selected))
     options = [FilteredOption(strike=strike, delta_k=intervals[strike], option_price=selected[strike][1], option_type=selected[strike][0]) for strike in sorted(selected)]
     if len(options) < 2:

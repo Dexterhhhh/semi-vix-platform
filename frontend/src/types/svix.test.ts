@@ -11,6 +11,8 @@ describe("SVIX dashboard data contract", () => {
       memory: 48.2,
       ai: 35.1,
       calculation_quality: 1,
+      estimated: false,
+      source_feed: "alpaca:indicative",
     };
 
     expect(payload.svix).toBeGreaterThan(0);

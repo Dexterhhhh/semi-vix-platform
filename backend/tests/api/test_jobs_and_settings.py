@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.api import jobs_routes
 from app.database.database import Base, SessionLocal, engine
-from app.database.models import CalculationJob
+from app.database.models import CalculationJob, ProviderCredential
 from app.main import app
 from app.scheduler.tasks import run_historical_calculation_task
 
@@ -29,6 +29,15 @@ def test_job_and_settings_routes_are_protected_and_persist(monkeypatch) -> None:
         job_id = created.json()["id"]
         assert dispatched == [job_id]
         assert client.get(f"/api/jobs/{job_id}", headers=headers).json()["status"] == "PENDING"
+        duplicate = client.post("/api/jobs/create", headers=headers, json={"start_date": "2025-01-01", "end_date": "2025-01-31", "frequency": "daily"})
+        assert duplicate.status_code == 409
+        assert f"#{job_id}" in duplicate.json()["detail"]
+        database = SessionLocal()
+        database.add(ProviderCredential(provider="ALPACA", enabled=True, data_feed="indicative"))
+        database.commit()
+        database.close()
+        unsupported = client.post("/api/jobs/create", headers=headers, json={"start_date": "2024-01-01", "end_date": "2024-01-31", "frequency": "daily"})
+        assert unsupported.status_code == 422
         settings = client.put("/api/settings", headers=headers, json={"refresh_frequency_minutes": 30, "selected_symbols": ["SOXX", "NVDA"], "manual_component_weights": None})
         assert settings.status_code == 200
         assert client.get("/api/settings", headers=headers).json()["selected_symbols"] == ["SOXX", "NVDA"]

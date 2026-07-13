@@ -1,11 +1,14 @@
 # Semi-VIX Platform
 
+当前发布版本：**v0.2**
+
 Semi-VIX 是一个私有、自托管的半导体波动率分析平台。系统通过只读行情接口采集期权数据，计算 SVIX、Core、Memory 和 AI Semiconductor Volatility，并提供历史图表、后台计算任务、数据保留策略和系统状态面板。
 
 支持的行情来源：
 
 - Interactive Brokers TWS / IB Gateway
 - Futu OpenD
+- Alpaca Market Data（免费 Indicative 测试源 / 付费 OPRA 正式源）
 
 平台不包含下单、撤单、持仓或资金操作，不能用于交易。
 
@@ -17,7 +20,35 @@ Semi-VIX 是一个私有、自托管的半导体波动率分析平台。系统�
 - 已运行并正确授权的 IBKR TWS / IB Gateway 或 Futu OpenD
 - 对应的美股及期权行情权限
 
-## 1. 在 Ubuntu 安装 Docker
+## Ubuntu 新手一键安装（推荐）
+
+将项目下载到 Ubuntu 22.04 或 24.04 服务器后，进入项目目录，只需执行：
+
+```sh
+sudo bash install-ubuntu.sh
+```
+
+脚本会交互式询问：
+
+- 管理员用户名
+- 管理员密码（二次确认，不回显）
+- 面板端口（留空则自动选择未占用的高位端口）
+
+然后自动完成：Docker 安装、安全密钥生成、`.env` 创建、镜像构建、数据库初始化、服务启动和健康检查。安装成功后会显示 SSH 隧道命令和面板地址。
+
+发布到自己的 GitHub 仓库后，可使用一条命令下载并安装（请替换仓库地址）：
+
+```sh
+git clone https://github.com/YOUR_ACCOUNT/YOUR_REPOSITORY.git semi-vix-platform && cd semi-vix-platform && sudo bash install-ubuntu.sh
+```
+
+> 当仓库为私有状态时，服务器必须事先配置该仓库的 GitHub SSH 读取权限。
+
+## 手动安装
+
+仅在需要自定义 Docker 安装方式或手工管理 `.env` 时使用以下步骤。
+
+### 1. 在 Ubuntu 安装 Docker
 
 通过 SSH 登录服务器，执行 Docker 官方便捷安装脚本：
 
@@ -37,17 +68,17 @@ docker run --rm hello-world
 
 Docker 官方将便捷脚本定位为快速初始化方式。需要锁定 Docker 版本或制定升级策略的生产服务器，请使用 [Docker 官方 Ubuntu APT 安装说明](https://docs.docker.com/engine/install/ubuntu/)。可以先执行 `sudo sh /tmp/get-docker.sh --dry-run` 检查脚本将进行的操作。
 
-## 2. 下载项目
+### 2. 下载项目
 
 ```sh
 sudo apt update
 sudo apt install -y git openssl
-git clone https://github.com/YOUR_GITHUB_USERNAME/semi-vix-platform.git
+git clone https://github.com/YOUR_ACCOUNT/YOUR_REPOSITORY.git semi-vix-platform
 cd semi-vix-platform
 cp .env.example .env
 ```
 
-## 3. 配置密钥和管理员
+### 3. 配置密钥和管理员
 
 生成 JWT 密钥：
 
@@ -73,9 +104,9 @@ nano .env
 SECRET_KEY=填入随机JWT密钥
 SECRET_ENCRYPTION_KEY=填入第一个AES密钥
 CREDENTIAL_MASTER_KEY=填入第二个AES密钥
-SVIX_ADMIN_USERNAME=admin
-SVIX_ADMIN_PASSWORD=设置一个高强度密码
-POSTGRES_PASSWORD=设置另一个高强度密码
+SVIX_ADMIN_USERNAME=设置你自己的管理员用户名
+SVIX_ADMIN_PASSWORD=设置一个高强度且唯一的密码
+POSTGRES_PASSWORD=设置另一个随机数据库密码
 ```
 
 同步修改 `DATABASE_URL` 中的 PostgreSQL 密码，使其与 `POSTGRES_PASSWORD` 一致：
@@ -86,7 +117,7 @@ DATABASE_URL=postgresql+psycopg://svix:你的数据库密码@postgres:5432/svix
 
 `.env` 包含所有真实密钥，已被 Git 忽略。不要上传、复制到工单或发送给其他人。
 
-## 4. 设置面板访问端口
+### 4. 设置面板访问端口
 
 默认配置只绑定服务器本机，并由 Docker 随机选择可用端口：
 
@@ -104,7 +135,7 @@ SVIX_HTTP_PORT=18443
 
 除非已经配置云防火墙和 HTTPS 反向代理，否则不要将 `SVIX_BIND_ADDRESS` 改为 `0.0.0.0`。FastAPI、PostgreSQL、Redis 和券商网关端口均不会映射到宿主机。
 
-## 5. 选择行情提供商
+### 5. 选择行情提供商
 
 ### IBKR
 
@@ -135,7 +166,16 @@ INSTALL_FUTU=true
 
 连接参数也可以在首次登录后的“设置与系统状态”页面修改。可选凭据会使用独立的 AES-256-GCM 密钥加密保存，页面不会回显明文。
 
-## 6. 启动平台
+### Alpaca
+
+首次登录后进入“设置与系统状态”，选择 `Alpaca Market Data`，填写 Alpaca API Key 和 API Secret，再选择数据源：
+
+- `Indicative（免费）`：提供 bid/ask，但它们是 Alpaca 由 OPRA 数据派生并修改后的指示性报价，不是官方 OPRA BBO。历史数据使用期权日线收盘成交价代理当日 BBO；面板运行后采集的新快照只有在双边报价、Call/Put 配对和 30 日期限插值均完整时才生成“严格计算值”。
+- `OPRA（付费正式）`：适用于正式 SVIX 计算，需要 Alpaca 有效的 OPRA 市场数据订阅。
+
+平台只访问 `data.alpaca.markets` 的只读行情端点，不使用下单、账户或持仓接口。
+
+### 6. 启动平台
 
 ```sh
 docker compose up -d --build
@@ -193,7 +233,9 @@ http://localhost:8080
 2. 将页面提供的 TOTP 信息导入 Google Authenticator、Microsoft Authenticator 或 Authy。
 3. 输入认证器当前显示的 6 位验证码完成绑定。
 4. 保存页面提供的恢复代码，并放在离线安全位置。
-5. 后续登录必须同时提供密码和动态验证码。
+5. 首次验证后，浏览器会通过 HttpOnly Refresh Cookie 静默续期；默认 7 天内无需重复输入密码和动态验证码。主动退出、Cookie 被清除或会话过期后需要重新完整登录。
+
+会话时长由 `.env` 中的 `REFRESH_EXPIRE_DAYS` 控制，默认值为 `7`。使用本机 HTTP 或 SSH 隧道访问时设置 `COOKIE_SECURE=false`；部署 HTTPS 后必须改为 `COOKIE_SECURE=true` 并重建服务。
 
 系统只支持一个管理员，不提供注册、多用户或角色管理。
 
@@ -203,13 +245,32 @@ http://localhost:8080
 
 查看当前 SVIX、Core、Memory、AI 指标及历史曲线。没有足够期权链或历史收益数据时，系统不会生成虚假的零值。
 
+### 单日仪表盘
+
+单日仪表盘只展示通过完整行情校验的严格计算点，并每 30 秒自动检查新结果。曲线按美东时间沿当日时间轴逐点生长，可切换 SVIX、Core Semi、Memory 和 AI Semi，也可选择此前仍保留详细数据的交易日。
+
+行情采集使用 NYSE 交易日历，自动处理周末、美国交易所假期、提前收盘以及夏令时。后台只在正常交易时段至正常收盘后 30 分钟之间运行；收盘后的延长窗口用于补全延迟数据。Celery 每10秒检查一次是否到期，实际采集间隔读取设置页面的“日内独立计算频率”，可选30秒、60秒、2分钟、5分钟或15分钟，修改后无需重启容器。免费 Alpaca 源最低限制为30秒，以避免超过接口调用限制或造成任务重叠。
+
 ### 历史计算
 
 选择起止日期和频率后创建后台任务。计算通过 Redis/Celery 异步执行，可在页面查看进度和结果。
 
+使用 Alpaca 免费延迟日线时，平台会自动启用历史近似模式：优先执行标准 30 日 VIX 插值；当免费数据缺少完整 Call/Put 配对或无法包围 30 日期限时，使用标的收盘价估算远期，并选取最接近 30 日的有效到期日。此类结果会降低质量分并标记为“近似”，任务完成信息会分别显示正式、近似和跳过的日期数量。该模式适合观察历史趋势，不等同于 OPRA 实时报价计算结果。
+
+Dashboard 使用同色系区分计算方法：浅色虚线表示历史近似值，实线表示面板采集后通过完整校验的严格计算值。`Indicative` 的严格值表示计算过程未使用历史回退，不代表报价已经升级为 OPRA 官方 BBO；切换到付费 `OPRA` 后，来源字段会相应记录为 `alpaca:opra`。
+
 ### 数据提供商
 
-在设置页选择 IBKR 或 Futu，填写 Host、端口及 IBKR Client ID，然后保存并测试连接。平台同时只启用一个行情来源。
+在设置页选择 Alpaca、IBKR 或 Futu，填写对应凭据或连接参数，然后保存并测试连接。平台同时只启用一个行情来源。
+
+### 独立自定义指数
+
+在“设置与系统状态”中可以创建一个独立自定义指数，填写指数名称、1～20个美股或ETF期权标的及基础权重；权重合计必须为100%。可选择两种缺失策略：
+
+- 严格：任一标的缺少有效期权链或历史收益数据时不生成结果
+- 容错：可用标的达到至少50%基础权重时，将剩余权重重新归一化后计算
+
+启用后，系统会把自定义成分自动加入行情采集和历史回填范围，并在主仪表盘与单日仪表盘显示独立结果。修改名称、成分、权重或缺失策略会创建新版本；不同版本的历史结果不会混合。自定义指数同样遵循详细结果保留与每日降采样策略。
 
 ### 数据生命周期
 

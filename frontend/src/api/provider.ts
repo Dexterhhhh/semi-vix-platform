@@ -1,10 +1,11 @@
 import { api } from './client'
 
-export type ProviderName = 'IBKR' | 'FUTU'
-export type ProviderStatus = { provider: ProviderName; configured: boolean; connected: boolean; last_checked_at: string | null; error: string | null }
+export type ProviderName = 'IBKR' | 'FUTU' | 'ALPACA'
+export type AlpacaFeed = 'indicative' | 'opra'
+export type ProviderStatus = { provider: ProviderName; configured: boolean; connected: boolean; last_checked_at: string | null; error: string | null; data_feed?: AlpacaFeed | null; production_ready: boolean; warning?: string | null }
 export type ProviderCredentials = { api_key?: string; secret?: string; account_identifier?: string }
-export type ProviderConfiguration = { provider: ProviderName; configured: boolean; host: string; port: number; client_id: number | null; credentials_present: boolean }
-export type ProviderConfigurationInput = { provider: ProviderName; host: string; port: number; client_id?: number; credentials?: ProviderCredentials }
+export type ProviderConfiguration = { provider: ProviderName; configured: boolean; host: string; port: number; client_id: number | null; credentials_present: boolean; data_feed?: AlpacaFeed | null; production_ready: boolean; warning?: string | null }
+export type ProviderConfigurationInput = { provider: ProviderName; host: string; port: number; client_id?: number; data_feed?: AlpacaFeed; credentials?: ProviderCredentials }
 
 export const getProviderStatus = async () => (await api.get<ProviderStatus>('/provider/status')).data
 export const getProviderConfiguration = async (provider: ProviderName) => (await api.get<ProviderConfiguration>('/provider/configuration', { params: { provider } })).data

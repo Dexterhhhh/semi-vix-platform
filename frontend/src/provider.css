@@ -10,6 +10,7 @@
 .provider-form button:disabled { cursor: not-allowed; opacity: .55; }
 .provider-form button.secondary { background: transparent; border: 1px solid #475569; color: #cbd5e1; }
 .success { color: #5eead4 !important; }
+.provider-warning { grid-column: 1 / -1; color: #fbbf24 !important; background: #3f2d14; border: 1px solid #854d0e; border-radius: 8px; padding: 10px 12px; }
 @media (max-width: 800px) { .provider-form, .credential-grid { grid-template-columns: 1fr; } }
 .lifecycle-panel { display: block; }
 .lifecycle-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin: 18px 0; }
@@ -21,3 +22,8 @@
 .storage-grid span { color: #94a3b8; }
 @media (max-width: 1000px) { .lifecycle-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 800px) { .lifecycle-grid, .storage-grid { grid-template-columns: 1fr; } }
+.custom-index-editor{display:block}.custom-index-editor form{margin-top:18px}.version-badge{color:#f9a8d4;border:1px solid #9d174d;background:#3b1029;border-radius:999px;padding:7px 10px;font-size:.75rem;white-space:nowrap}
+.custom-index-meta{display:grid;grid-template-columns:1.2fr 1.8fr 1fr;gap:14px;align-items:end}.custom-index-meta label{display:flex;flex-direction:column;gap:7px;color:#cbd5e1}.custom-index-meta input,.custom-index-meta select,.component-row input{background:#0b1728;border:1px solid #334155;color:#f8fafc;padding:10px;border-radius:8px}.custom-index-meta .enable-custom{flex-direction:row;align-items:center;min-height:40px}
+.custom-components{margin:18px 0;display:grid;gap:8px}.component-header,.component-row{display:grid;grid-template-columns:1fr 180px 70px;gap:10px;align-items:center}.component-header{color:#64748b;font-size:.72rem;padding:0 4px}.component-row>div{display:flex;align-items:center;gap:7px}.component-row>div input{width:100%}.component-row>div span{color:#94a3b8}.danger-ghost{background:transparent;color:#fb7185;border:1px solid #7f1d1d;padding:9px}.danger-ghost:disabled{opacity:.35}
+.custom-index-actions{display:flex;align-items:center;justify-content:flex-end;gap:14px}.custom-index-actions .secondary{margin-right:auto;background:transparent;border:1px solid #475569;color:#cbd5e1}.custom-index-actions button:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:800px){.custom-index-meta{grid-template-columns:1fr}.component-header,.component-row{grid-template-columns:1fr 110px 62px}.custom-index-actions{flex-wrap:wrap}}

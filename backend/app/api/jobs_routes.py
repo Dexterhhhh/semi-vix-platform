@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.jwt import get_current_admin
 from app.database.database import get_db
-from app.database.models import AdminAccount, CalculationJob
+from app.database.models import AdminAccount, CalculationJob, ProviderCredential
 from app.services.calculation_service import create_historical_job, dispatch_historical_job
 
 router = APIRouter(prefix="/api/jobs", tags=["calculation-jobs"])
@@ -49,6 +49,18 @@ def _response(job: CalculationJob) -> JobResponse:
 def create_job(payload: JobCreateRequest, _: AdminAccount = Depends(get_current_admin), database: Session = Depends(get_db)) -> JobResponse:
     if payload.end_date < payload.start_date:
         raise HTTPException(status_code=422, detail="end_date must not be before start_date")
+    active_provider = database.query(ProviderCredential).filter_by(enabled=True).first()
+    if active_provider and active_provider.provider == "ALPACA" and payload.start_date < date(2024, 2, 1):
+        raise HTTPException(status_code=422, detail="Alpaca 期权历史数据仅支持 2024-02-01 之后的日期")
+    duplicate = database.query(CalculationJob).filter(
+        CalculationJob.type == "HISTORICAL_SVIX",
+        CalculationJob.start_date == payload.start_date,
+        CalculationJob.end_date == payload.end_date,
+        CalculationJob.frequency == payload.frequency,
+        CalculationJob.status.in_(("PENDING", "RUNNING")),
+    ).first()
+    if duplicate is not None:
+        raise HTTPException(status_code=409, detail=f"相同范围的历史计算任务 #{duplicate.id} 已在运行")
     job = create_historical_job(database, payload.start_date, payload.end_date, payload.frequency)
     try:
         dispatch_historical_job(job.id)
