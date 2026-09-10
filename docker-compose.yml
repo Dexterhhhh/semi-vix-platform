@@ -1,89 +1,23 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-svix}
-      POSTGRES_USER: ${POSTGRES_USER:-svix}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-svix} -d ${POSTGRES_DB:-svix}"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  backend:
-    image: vix-backend:latest
+  app:
+    image: semi-vix-platform:latest
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: Dockerfile
       args:
         INSTALL_FUTU: ${INSTALL_FUTU:-false}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
-    restart: unless-stopped
-    env_file: .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    expose:
-      - "8000"
-
-  worker:
-    image: vix-backend:latest
-    command: ["celery", "-A", "app.scheduler.celery_app:celery_app", "worker", "--loglevel=INFO"]
-    restart: unless-stopped
-    env_file: .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  beat:
-    image: vix-backend:latest
-    command: ["celery", "-A", "app.scheduler.celery_app:celery_app", "beat", "--loglevel=INFO"]
-    restart: unless-stopped
-    env_file: .env
-    depends_on:
-      redis:
-        condition: service_healthy
-
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-      args:
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
     restart: unless-stopped
-
-  nginx:
-    image: vix-nginx:latest
-    build:
-      context: .
-      dockerfile: nginx/Dockerfile
-    restart: unless-stopped
-    depends_on:
-      - frontend
-      - backend
+    env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${SVIX_BIND_ADDRESS:-127.0.0.1}:${SVIX_HTTP_PORT:-0}:80"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    shm_size: 256mb
+    stop_grace_period: 60s
 
 volumes:
   postgres_data:

@@ -12,6 +12,12 @@ Semi-VIX 是一个私有、自托管的半导体波动率分析平台。系统�
 
 平台不包含下单、撤单、持仓或资金操作，不能用于交易。
 
+## 单容器架构
+
+当前版本在 NAS 上只创建一个 `app` 容器。镜像内由 Supervisor 统一管理 PostgreSQL 16、Redis、FastAPI、Celery Worker、Celery Beat 和 Nginx；React 静态文件也由同一个 Nginx 提供。外部只暴露一个 HTTP 端口，PostgreSQL、Redis 和 FastAPI 仅监听容器内部回环地址。
+
+数据库仍保存在独立的 Docker 卷 `postgres_data` 中，删除或升级容器不会删除数据。请注意：单容器便于家庭 NAS 部署和管理，但不适合需要分别扩容、滚动升级或服务级故障隔离的大型生产环境。
+
 ## 系统要求
 
 - Ubuntu 22.04 或 24.04（推荐）
@@ -47,6 +53,22 @@ git clone https://github.com/YOUR_ACCOUNT/YOUR_REPOSITORY.git semi-vix-platform 
 ## 手动安装
 
 仅在需要自定义 Docker 安装方式或手工管理 `.env` 时使用以下步骤。
+
+### 群晖 DSM / Container Manager
+
+群晖上建议把本仓库目录作为 Container Manager 的“项目”，项目路径中保留 `docker-compose.yml`、`Dockerfile` 和 `.env`。首次部署或更新代码后，在项目目录执行：
+
+```sh
+docker compose up -d --build --remove-orphans
+```
+
+也可以在 Container Manager 的“项目”页面执行等价的重新构建操作。完成后，“容器”页面只会看到该项目的 `app-1` 一个容器；容器内部进程状态可通过以下命令查看：
+
+```sh
+docker compose exec app supervisorctl status
+```
+
+若使用 DSM 反向代理，把目标指向 `SVIX_HTTP_PORT` 配置的 NAS 本机端口，并在 HTTPS 场景设置 `COOKIE_SECURE=true`。
 
 ### 1. 在 Ubuntu 安装 Docker
 
@@ -112,7 +134,7 @@ POSTGRES_PASSWORD=设置另一个随机数据库密码
 同步修改 `DATABASE_URL` 中的 PostgreSQL 密码，使其与 `POSTGRES_PASSWORD` 一致：
 
 ```dotenv
-DATABASE_URL=postgresql+psycopg://svix:你的数据库密码@postgres:5432/svix
+DATABASE_URL=postgresql+psycopg://svix:你的数据库密码@127.0.0.1:5432/svix
 ```
 
 `.env` 包含所有真实密钥，已被 Git 忽略。不要上传、复制到工单或发送给其他人。
@@ -190,7 +212,7 @@ docker compose ps
 查询面板实际端口：
 
 ```sh
-docker compose port nginx 80
+docker compose port app 80
 ```
 
 随机端口示例输出：
@@ -296,7 +318,7 @@ docker compose ps
 
 ```sh
 docker compose logs -f
-docker compose logs --tail=200 backend worker beat nginx
+docker compose logs --tail=200 app
 ```
 
 重启服务：
@@ -329,12 +351,36 @@ docker compose ps
 
 后端启动时会自动运行数据库迁移。不要同时运行多个升级命令。
 
+### 从旧的七容器版本升级
+
+旧版的 PostgreSQL 也是 16，因此新容器会继续使用原来的 `postgres_data` 卷，不需要导入导出。先在拉取新代码前用旧版服务名创建备份：
+
+```sh
+docker compose exec -T postgres pg_dump -U svix -d svix -Fc > semi-vix-before-single-container.backup
+```
+
+然后更新代码：
+
+```sh
+git pull --ff-only
+```
+
+无需修改旧 `.env`：入口脚本会根据原有 `POSTGRES_*` 配置生成容器内部连接地址。移除旧服务并启动单容器版：
+
+```sh
+docker compose down --remove-orphans
+docker compose up -d --build
+docker compose ps
+```
+
+`docker compose down --remove-orphans` 不带 `-v`，所以会移除旧容器但保留数据库卷。不要在迁移时添加 `-v`。
+
 ## 12. 数据库备份与恢复
 
 创建备份：
 
 ```sh
-docker compose exec -T postgres pg_dump -U svix -d svix -Fc > semi-vix.backup
+docker compose exec -T app bash -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > semi-vix.backup
 ```
 
 备份文件包含平台设置、加密凭据和历史结果，应按敏感数据保护。
@@ -342,9 +388,9 @@ docker compose exec -T postgres pg_dump -U svix -d svix -Fc > semi-vix.backup
 恢复前先停止会写数据库的服务：
 
 ```sh
-docker compose stop backend worker beat
-docker compose exec -T postgres pg_restore -U svix -d svix --clean --if-exists < semi-vix.backup
-docker compose start backend worker beat
+docker compose exec app supervisorctl stop beat worker backend
+docker compose exec -T app bash -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_restore -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < semi-vix.backup
+docker compose exec app supervisorctl start backend worker beat
 ```
 
 建议先在独立测试服务器验证恢复流程。
@@ -363,8 +409,8 @@ groups
 
 ```sh
 docker compose ps
-docker compose port nginx 80
-docker compose logs --tail=100 nginx frontend backend
+docker compose port app 80
+docker compose logs --tail=100 app
 ```
 
 确认 SSH 隧道使用的是服务器当前实际端口。
@@ -380,7 +426,7 @@ docker compose logs --tail=100 nginx frontend backend
 ### 查看健康状态
 
 ```sh
-PORT=$(docker compose port nginx 80 | sed 's/.*://')
+PORT=$(docker compose port app 80 | sed 's/.*://')
 curl -fsS "http://127.0.0.1:${PORT}/health"
 ```
 

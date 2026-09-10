@@ -139,7 +139,7 @@ tmp_env="$(mktemp)"
   printf 'CREDENTIAL_MASTER_KEY=%s\n' "${credential_key}"
   printf 'SVIX_ADMIN_USERNAME=%s\n' "${admin_username}"
   printf 'SVIX_ADMIN_PASSWORD=%s\n' "${admin_password}"
-  printf 'DATABASE_URL=postgresql+psycopg://svix:%s@postgres:5432/svix\n' "${postgres_password}"
+  printf 'DATABASE_URL=postgresql+psycopg://svix:%s@127.0.0.1:5432/svix\n' "${postgres_password}"
   printf 'JWT_EXPIRE_MINUTES=15\nREFRESH_EXPIRE_DAYS=7\n'
   printf 'CORS_ORIGINS=http://localhost:8080\nCOOKIE_SECURE=false\n'
   printf 'SVIX_BIND_ADDRESS=127.0.0.1\nSVIX_HTTP_PORT=%s\n' "${dashboard_port}"
@@ -147,7 +147,7 @@ tmp_env="$(mktemp)"
   printf 'IBKR_HOST=host.docker.internal\nIBKR_PORT=7497\nIBKR_CLIENT_ID=19\n'
   printf 'FUTU_HOST=host.docker.internal\nFUTU_PORT=11111\n'
   printf 'ALPACA_BASE_URL=https://data.alpaca.markets\nALPACA_FEED=indicative\n'
-  printf 'REDIS_URL=redis://redis:6379/0\nMARKET_REFRESH_MINUTES=15\nSVIX_CALCULATION_MINUTES=15\n'
+  printf 'REDIS_URL=redis://127.0.0.1:6379/0\nMARKET_REFRESH_MINUTES=15\nSVIX_CALCULATION_MINUTES=15\n'
   printf 'NPM_REGISTRY=https://registry.npmmirror.com\nPIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple\n'
   printf 'POSTGRES_DB=svix\nPOSTGRES_USER=svix\nPOSTGRES_PASSWORD=%s\n' "${postgres_password}"
 } >"${tmp_env}"
