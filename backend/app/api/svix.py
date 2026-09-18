@@ -30,6 +30,8 @@ class SVIXPoint(BaseModel):
     calculation_quality: float
     estimated: bool
     source_feed: str | None = None
+    calculation_method: str = "legacy"
+    market_data_quality: str = "unknown"
 
 
 class CalculationRequest(BaseModel):
@@ -54,7 +56,7 @@ class MarketStatusResponse(BaseModel):
 
 
 def _history_point(record: SVIXHistory) -> SVIXPoint:
-    return SVIXPoint(timestamp=record.timestamp, svix=record.svix, core=record.core_vol, memory=record.memory_vol, ai=record.ai_vol, calculation_quality=record.calculation_quality, estimated=record.estimated, source_feed=record.source_feed)
+    return SVIXPoint(timestamp=record.timestamp, svix=record.svix, core=record.core_vol, memory=record.memory_vol, ai=record.ai_vol, calculation_quality=record.calculation_quality, estimated=record.estimated, source_feed=record.source_feed, calculation_method=record.calculation_method, market_data_quality=record.market_data_quality)
 
 
 @router.get("/current", response_model=SVIXPoint)
@@ -64,7 +66,7 @@ def current_svix(_: AdminAccount = Depends(get_current_admin), database: Session
         daily = database.query(SVIXDaily).order_by(SVIXDaily.date.desc()).first()
         if daily is None:
             raise HTTPException(status_code=404, detail="No SVIX calculation is available")
-        return SVIXPoint(timestamp=datetime.combine(daily.date, time.min, tzinfo=timezone.utc), svix=daily.svix_close, core=daily.core_close, memory=daily.memory_close, ai=daily.ai_close, calculation_quality=daily.min_calculation_quality, estimated=daily.estimated, source_feed=daily.source_feed)
+        return SVIXPoint(timestamp=daily.close_timestamp or datetime.combine(daily.date, time.min, tzinfo=timezone.utc), svix=daily.svix_close, core=daily.core_close, memory=daily.memory_close, ai=daily.ai_close, calculation_quality=daily.min_calculation_quality, estimated=daily.estimated, source_feed=daily.source_feed)
     return SVIXPoint(timestamp=record.timestamp, svix=record.svix, core=record.core_vol, memory=record.memory_vol, ai=record.ai_vol, calculation_quality=record.calculation_quality, estimated=record.estimated, source_feed=record.source_feed)
 
 
@@ -86,10 +88,14 @@ def svix_history(start_date: date = Query(...), end_date: date = Query(...), fre
     detailed_dates = set(selected_by_date)
     daily_records = database.query(SVIXDaily).filter(SVIXDaily.date >= start_date, SVIXDaily.date <= end_date).order_by(SVIXDaily.date.asc()).all()
     points = [_history_point(record) for record in selected_by_date.values()]
-    points.extend(SVIXPoint(timestamp=datetime.combine(record.date, time.min, tzinfo=timezone.utc), svix=record.svix_close, core=record.core_close, memory=record.memory_close, ai=record.ai_close, calculation_quality=record.min_calculation_quality, estimated=record.estimated, source_feed=record.source_feed) for record in daily_records if record.date not in detailed_dates)
+    points.extend(SVIXPoint(timestamp=record.close_timestamp or datetime.combine(record.date, time.min, tzinfo=timezone.utc), svix=record.svix_close, core=record.core_close, memory=record.memory_close, ai=record.ai_close, calculation_quality=record.min_calculation_quality, estimated=record.estimated, source_feed=record.source_feed) for record in daily_records if record.date not in detailed_dates)
     points.sort(key=lambda point: point.timestamp)
     if frequency == "weekly":
-        points = [point for point in points if point.timestamp.weekday() == 4]
+        by_week: dict[tuple[int, int], SVIXPoint] = {}
+        for point in points:
+            iso = point.timestamp.isocalendar()
+            by_week[(iso.year, iso.week)] = point
+        points = list(by_week.values())
     return points
 
 
@@ -121,8 +127,8 @@ def intraday_svix(session_date: date | None = Query(default=None), _: AdminAccou
     if bounds is None:
         return []
     start, end = bounds
-    records = database.query(SVIXHistory).filter(SVIXHistory.timestamp >= start, SVIXHistory.timestamp <= end, SVIXHistory.estimated.is_(False)).order_by(SVIXHistory.timestamp.asc()).all()
-    return [SVIXPoint(timestamp=record.timestamp, svix=record.svix, core=record.core_vol, memory=record.memory_vol, ai=record.ai_vol, calculation_quality=record.calculation_quality, estimated=False, source_feed=record.source_feed) for record in records]
+    records = database.query(SVIXHistory).filter(SVIXHistory.timestamp >= start, SVIXHistory.timestamp <= end).order_by(SVIXHistory.timestamp.asc()).all()
+    return [_history_point(record) for record in records]
 
 
 @router.get("/components")

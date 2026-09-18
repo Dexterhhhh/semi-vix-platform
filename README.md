@@ -1,6 +1,6 @@
 # Semi-VIX Platform
 
-当前发布版本：**v0.2**
+当前发布版本：**v0.3**
 
 Semi-VIX 是一个私有、自托管的半导体波动率分析平台。系统通过只读行情接口采集期权数据，计算 SVIX、Core、Memory 和 AI Semiconductor Volatility，并提供历史图表、后台计算任务、数据保留策略和系统状态面板。
 
@@ -14,7 +14,9 @@ Semi-VIX 是一个私有、自托管的半导体波动率分析平台。系统�
 
 ## 单容器架构
 
-当前版本在 NAS 上只创建一个 `app` 容器。镜像内由 Supervisor 统一管理 PostgreSQL 16、Redis、FastAPI、Celery Worker、Celery Beat 和 Nginx；React 静态文件也由同一个 Nginx 提供。外部只暴露一个 HTTP 端口，PostgreSQL、Redis 和 FastAPI 仅监听容器内部回环地址。
+当前版本在 NAS 上只创建一个 `app` 容器。镜像内由 Supervisor 统一管理 Go 数值计算引擎、Go 调度器、PostgreSQL 16、FastAPI 兼容层和 Nginx；React 静态文件也由同一个 Nginx 提供。外部只暴露一个 HTTP 端口，Go 引擎、PostgreSQL 和 FastAPI 仅监听容器内部回环地址。
+
+组合相关性、组合方差和累计方差期限插值等高频数值路径已由常驻 Go 进程执行；周期调度和持久化任务扫描也已迁入 Go，不再需要 Redis、Celery Worker 或 Celery Beat。Python 目前仅保留 API、认证、数据库迁移及 Alpaca SDK 兼容层。后续可继续将 Alpaca HTTP 采集迁入 Go；整个迁移过程始终保持单 Docker 部署。
 
 数据库仍保存在独立的 Docker 卷 `postgres_data` 中，删除或升级容器不会删除数据。请注意：单容器便于家庭 NAS 部署和管理，但不适合需要分别扩容、滚动升级或服务级故障隔离的大型生产环境。
 
@@ -23,8 +25,8 @@ Semi-VIX 是一个私有、自托管的半导体波动率分析平台。系统�
 - Ubuntu 22.04 或 24.04（推荐）
 - 2 核 CPU、4 GB 内存、20 GB 可用磁盘起步
 - 可以访问 Docker Hub、PyPI 和 npm 镜像
-- 已运行并正确授权的 IBKR TWS / IB Gateway 或 Futu OpenD
-- 对应的美股及期权行情权限
+- Alpaca 免费账户及 Market Data API Key / Secret
+- 允许访问 Alpaca Market Data API
 
 ## Ubuntu 新手一键安装（推荐）
 
@@ -155,7 +157,7 @@ SVIX_BIND_ADDRESS=127.0.0.1
 SVIX_HTTP_PORT=18443
 ```
 
-除非已经配置云防火墙和 HTTPS 反向代理，否则不要将 `SVIX_BIND_ADDRESS` 改为 `0.0.0.0`。FastAPI、PostgreSQL、Redis 和券商网关端口均不会映射到宿主机。
+除非已经配置云防火墙和 HTTPS 反向代理，否则不要将 `SVIX_BIND_ADDRESS` 改为 `0.0.0.0`。FastAPI 和 PostgreSQL 端口均不会映射到宿主机。
 
 ### 5. 选择行情提供商
 
@@ -192,7 +194,7 @@ INSTALL_FUTU=true
 
 首次登录后进入“设置与系统状态”，选择 `Alpaca Market Data`，填写 Alpaca API Key 和 API Secret，再选择数据源：
 
-- `Indicative（免费）`：提供 bid/ask，但它们是 Alpaca 由 OPRA 数据派生并修改后的指示性报价，不是官方 OPRA BBO。历史数据使用期权日线收盘成交价代理当日 BBO；面板运行后采集的新快照只有在双边报价、Call/Put 配对和 30 日期限插值均完整时才生成“严格计算值”。
+- `Indicative（免费）`：本项目支持的个人部署主数据源。它提供由 OPRA 数据派生并修改后的指示性 bid/ask，不是官方 OPRA BBO；实时结果会持续计算，但始终标记为 `indicative_quote` 与“估算”。历史数据使用期权日线收盘成交价作为 Q(K) 代理，并标记为 `trade_close_proxy`，不会冒充历史 BBO。
 - `OPRA（付费正式）`：适用于正式 SVIX 计算，需要 Alpaca 有效的 OPRA 市场数据订阅。
 
 平台只访问 `data.alpaca.markets` 的只读行情端点，不使用下单、账户或持仓接口。
@@ -269,17 +271,17 @@ http://localhost:8080
 
 ### 单日仪表盘
 
-单日仪表盘只展示通过完整行情校验的严格计算点，并每 30 秒自动检查新结果。曲线按美东时间沿当日时间轴逐点生长，可切换 SVIX、Core Semi、Memory 和 AI Semi，也可选择此前仍保留详细数据的交易日。
+单日仪表盘展示当前数据源能够生成的合格计算点，并每 30 秒自动检查新结果。使用免费 Alpaca 时会显示 `INDICATIVE · LIVE` 和估算身份；曲线按美东时间沿当日时间轴逐点生长，可切换 SVIX、Core Semi、Memory 和 AI Semi，也可选择此前仍保留详细数据的交易日。
 
-行情采集使用 NYSE 交易日历，自动处理周末、美国交易所假期、提前收盘以及夏令时。后台只在正常交易时段至正常收盘后 30 分钟之间运行；收盘后的延长窗口用于补全延迟数据。Celery 每10秒检查一次是否到期，实际采集间隔读取设置页面的“日内独立计算频率”，可选30秒、60秒、2分钟、5分钟或15分钟，修改后无需重启容器。免费 Alpaca 源最低限制为30秒，以避免超过接口调用限制或造成任务重叠。
+行情采集使用 NYSE 交易日历，自动处理周末、美国交易所假期、提前收盘以及夏令时。后台只在正常交易时段至正常收盘后 30 分钟之间运行；收盘后的延长窗口用于补全延迟数据。Go 调度器每 10 秒检查一次是否到期，实际采集间隔读取设置页面的“日内独立计算频率”，可选 30 秒、60 秒、2 分钟、5 分钟或 15 分钟，修改后无需重启容器。免费 Alpaca 源最低限制为 30 秒，以避免超过接口调用限制或造成任务重叠。
 
 ### 历史计算
 
-选择起止日期和频率后创建后台任务。计算通过 Redis/Celery 异步执行，可在页面查看进度和结果。
+选择起止日期和频率后创建后台任务。数据库中的任务记录是可恢复队列，由 Go 调度器执行，可在页面查看进度和结果。
 
 使用 Alpaca 免费延迟日线时，平台会自动启用历史近似模式：优先执行标准 30 日 VIX 插值；当免费数据缺少完整 Call/Put 配对或无法包围 30 日期限时，使用标的收盘价估算远期，并选取最接近 30 日的有效到期日。此类结果会降低质量分并标记为“近似”，任务完成信息会分别显示正式、近似和跳过的日期数量。该模式适合观察历史趋势，不等同于 OPRA 实时报价计算结果。
 
-Dashboard 使用同色系区分计算方法：浅色虚线表示历史近似值，实线表示面板采集后通过完整校验的严格计算值。`Indicative` 的严格值表示计算过程未使用历史回退，不代表报价已经升级为 OPRA 官方 BBO；切换到付费 `OPRA` 后，来源字段会相应记录为 `alpaca:opra`。
+Dashboard 使用同色系区分计算身份：浅色虚线表示 Indicative 或历史代理估算，实线仅表示正式 BBO 输入生成的严格值。免费账户的结果始终记录为 `alpaca:indicative`，不会因为计算过程完整而升级为严格值；只有实际付费 OPRA 输入才记录为 `alpaca:opra`。
 
 ### 数据提供商
 
@@ -388,9 +390,9 @@ docker compose exec -T app bash -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h 
 恢复前先停止会写数据库的服务：
 
 ```sh
-docker compose exec app supervisorctl stop beat worker backend
+docker compose exec app supervisorctl stop scheduler backend
 docker compose exec -T app bash -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_restore -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < semi-vix.backup
-docker compose exec app supervisorctl start backend worker beat
+docker compose exec app supervisorctl start backend scheduler
 ```
 
 建议先在独立测试服务器验证恢复流程。
@@ -434,7 +436,7 @@ curl -fsS "http://127.0.0.1:${PORT}/health"
 
 - 不要提交 `.env`、数据库备份、证书私钥或恢复代码。
 - 不要复用 JWT、TOTP、凭据加密和数据库密码。
-- 不要公开 TWS、IB Gateway、Futu OpenD、PostgreSQL 或 Redis 端口。
+- 不要公开 PostgreSQL 或 FastAPI 内部端口。
 - 默认使用 `127.0.0.1` 和 SSH 隧道访问。
 - 公网部署必须启用 HTTPS、防火墙和定期备份。
 - 定期检查 `docker compose logs`、磁盘空间和最近数据维护状态。

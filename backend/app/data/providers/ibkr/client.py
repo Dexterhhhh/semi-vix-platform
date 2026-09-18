@@ -8,7 +8,8 @@ snapshot, so a web request never leaks an IBKR subscription.
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from app.data.exceptions import ProviderUnavailableError
@@ -22,12 +23,22 @@ class IBKRClient:
         self.max_option_strikes = max_option_strikes
         self._ib: Any = None
         self._operation_lock = None
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ibkr-sdk")
+
+    @staticmethod
+    def _call_with_event_loop(function, *args):
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+        return function(*args)
 
     async def _run(self, function, *args):
         if self._operation_lock is None:
             self._operation_lock = asyncio.Lock()
         async with self._operation_lock:
-            return await asyncio.to_thread(function, *args)
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(self._executor, self._call_with_event_loop, function, *args)
 
     def _connected(self) -> bool:
         return bool(self._ib and self._ib.isConnected())
@@ -107,13 +118,24 @@ class IBKRClient:
         chain = next((item for item in chains if item.exchange == "SMART" and (target is None or target in item.expirations)), None)
         if chain is None:
             return []
-        expiration = target or min(chain.expirations)
+        if target:
+            expirations = [target]
+        else:
+            today = datetime.now(timezone.utc).date()
+            target_date = today + timedelta(days=30)
+            valid = sorted(value for value in chain.expirations if datetime.strptime(value, "%Y%m%d").date() > today)
+            lower = max((value for value in valid if datetime.strptime(value, "%Y%m%d").date() <= target_date), default=None)
+            upper = min((value for value in valid if datetime.strptime(value, "%Y%m%d").date() >= target_date), default=None)
+            expirations = list(dict.fromkeys(value for value in (lower, upper) if value))
+            if len(expirations) < 2:
+                expirations = sorted(valid, key=lambda value: abs((datetime.strptime(value, "%Y%m%d").date() - target_date).days))[:2]
         underlying_price = optional_float(self._snapshot_sync(stock).get("price"))
         strikes = sorted(float(value) for value in chain.strikes if float(value) > 0)
-        if len(strikes) > self.max_option_strikes:
+        strikes_per_expiry = max(2, self.max_option_strikes // max(1, len(expirations)))
+        if len(strikes) > strikes_per_expiry:
             reference = underlying_price if underlying_price is not None else strikes[len(strikes) // 2]
-            strikes = sorted(sorted(strikes, key=lambda value: abs(value - reference))[: self.max_option_strikes])
-        return [{"symbol": symbol, "expiry": expiration, "strike": strike, "option_type": right} for strike in strikes for right in ("C", "P")]
+            strikes = sorted(sorted(strikes, key=lambda value: abs(value - reference))[:strikes_per_expiry])
+        return [{"symbol": symbol, "expiry": expiration, "strike": strike, "option_type": right} for expiration in expirations for strike in strikes for right in ("C", "P")]
 
     async def option_chain(self, symbol: str, expiry: date | datetime | None) -> list[dict[str, Any]]:
         return await self._run(self._option_chain_sync, symbol, expiry)

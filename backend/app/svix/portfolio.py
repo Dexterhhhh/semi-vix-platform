@@ -8,9 +8,16 @@ import numpy as np
 
 from app.svix.exceptions import InsufficientCorrelationData, InvalidVariance
 from app.svix.models import CorrelationMatrix, PortfolioVarianceResult
+from app.svix import go_engine
 
 
 def calculate_portfolio_variance(weights: Mapping[str, float], volatilities: Mapping[str, float], correlation: CorrelationMatrix) -> PortfolioVarianceResult:
+    if go_engine.enabled():
+        try:
+            result = go_engine.call("/v1/portfolio", {"weights": dict(weights), "volatilities": dict(volatilities), "correlation": correlation.model_dump()})
+            return PortfolioVarianceResult.model_validate(result)
+        except (ValueError, RuntimeError) as exc:
+            raise InvalidVariance(str(exc)) from exc
     assets = correlation.assets
     if set(weights) != set(assets) or set(volatilities) != set(assets):
         raise InsufficientCorrelationData("Weights, volatilities, and correlation assets must match")

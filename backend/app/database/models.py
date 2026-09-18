@@ -98,6 +98,10 @@ class OptionSnapshot(Base):
     open_interest: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     implied_volatility: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     delayed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    feed: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    price_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    received_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+    batch_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
 
 
 class StockSnapshot(Base):
@@ -115,6 +119,10 @@ class StockSnapshot(Base):
     ask: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     volume: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     delayed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    feed: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    price_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    received_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
+    batch_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
 
 
 class SVIXHistory(Base):
@@ -128,6 +136,8 @@ class SVIXHistory(Base):
     calculation_quality: Mapped[float] = mapped_column(Float, nullable=False)
     estimated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     source_feed: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    calculation_method: Mapped[str] = mapped_column(String(32), nullable=False, default="legacy")
+    market_data_quality: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
 
 
@@ -146,6 +156,8 @@ class SVIXDaily(Base):
     min_calculation_quality: Mapped[float] = mapped_column(Float, nullable=False)
     estimated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     source_feed: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    open_timestamp: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
+    close_timestamp: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow, onupdate=utcnow)
 
@@ -264,5 +276,7 @@ class CustomIndexDaily(Base):
     min_calculation_quality: Mapped[float] = mapped_column(Float, nullable=False)
     estimated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     source_feed: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    open_timestamp: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
+    close_timestamp: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow, onupdate=utcnow)

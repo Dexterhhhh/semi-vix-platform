@@ -21,8 +21,6 @@ def _timestamp(value: object) -> datetime:
 def _spread(bid: object, ask: object) -> tuple[float | None, float | None]:
     normalized_bid = optional_float(bid)
     normalized_ask = optional_float(ask)
-    if normalized_bid is not None and normalized_ask is not None and normalized_bid > normalized_ask:
-        return normalized_ask, normalized_bid
     return normalized_bid, normalized_ask
 
 
@@ -45,7 +43,7 @@ class AlpacaProvider(MarketDataProvider):
         symbol = normalize_symbol(symbol)
         raw = await self.client.stock_quote(symbol)
         bid, ask = _spread(raw.get("bid"), raw.get("ask"))
-        return StockQuote(symbol=symbol, timestamp=_timestamp(raw.get("timestamp")), price=optional_float(raw.get("price")), bid=bid, ask=ask, volume=optional_int(raw.get("volume")), provider=self.provider_name, delayed=raw.get("delayed"))
+        return StockQuote(symbol=symbol, timestamp=_timestamp(raw.get("timestamp")), price=optional_float(raw.get("price")), bid=bid, ask=ask, volume=optional_int(raw.get("volume")), provider=self.provider_name, delayed=raw.get("delayed"), feed=self.client.feed, price_type="bbo")
 
     async def get_option_chain(self, symbol: str, expiry: date | datetime | None = None) -> list[OptionContract]:
         symbol = normalize_symbol(symbol)
@@ -55,4 +53,5 @@ class AlpacaProvider(MarketDataProvider):
     async def get_option_quote(self, contract: OptionContract) -> OptionQuote:
         raw = await self.client.option_quote(contract.contract_id.split(":", 1)[1])
         bid, ask = _spread(raw.get("bid"), raw.get("ask"))
-        return OptionQuote(contract_id=contract.contract_id, symbol=contract.symbol, expiry=contract.expiry, strike=contract.strike, option_type=contract.option_type, timestamp=_timestamp(raw.get("timestamp")), bid=bid, ask=ask, last=optional_float(raw.get("last")), volume=optional_int(raw.get("volume")), open_interest=optional_int(raw.get("open_interest")), implied_volatility=optional_float(raw.get("implied_volatility")), provider=self.provider_name, delayed=raw.get("delayed"))
+        price_type = "bbo" if self.client.feed.lower() == "opra" else "indicative_quote"
+        return OptionQuote(contract_id=contract.contract_id, symbol=contract.symbol, expiry=contract.expiry, strike=contract.strike, option_type=contract.option_type, timestamp=_timestamp(raw.get("timestamp")), bid=bid, ask=ask, last=optional_float(raw.get("last")), volume=optional_int(raw.get("volume")), open_interest=optional_int(raw.get("open_interest")), implied_volatility=optional_float(raw.get("implied_volatility")), provider=self.provider_name, delayed=raw.get("delayed"), feed=self.client.feed, price_type=price_type)

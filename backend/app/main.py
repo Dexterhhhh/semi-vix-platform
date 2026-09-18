@@ -13,6 +13,8 @@ from app.auth.routes import router as auth_router
 from app.config import get_settings
 from app.database.database import SessionLocal
 from app.database.models import AdminAccount, AdminSecurity
+from app.scheduler.routes import router as scheduler_router
+from app.services.calculation_service import recover_interrupted_jobs
 
 
 def ensure_initial_admin() -> None:
@@ -33,10 +35,15 @@ def ensure_initial_admin() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     ensure_initial_admin()
+    database = SessionLocal()
+    try:
+        recover_interrupted_jobs(database)
+    finally:
+        database.close()
     yield
 
 
-app = FastAPI(title="Semi-VIX Platform", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Semi-VIX Platform", version="0.3.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=get_settings().allowed_origins, allow_credentials=True, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
 app.include_router(health_router)
 app.include_router(auth_router)
@@ -45,3 +52,4 @@ app.include_router(svix_router)
 app.include_router(jobs_router)
 app.include_router(settings_router)
 app.include_router(custom_index_router)
+app.include_router(scheduler_router)

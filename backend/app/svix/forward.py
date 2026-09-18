@@ -13,7 +13,7 @@ from app.svix.models import ForwardResult, K0Result
 
 def option_mid(quote: OptionQuote, allow_last_price_fallback: bool = False) -> float | None:
     """Return a positive midpoint, optionally falling back to a valid last price."""
-    if quote.bid is not None and quote.ask is not None:
+    if quote.bid is not None and quote.ask is not None and quote.bid <= quote.ask:
         midpoint = (quote.bid + quote.ask) / 2.0
         if math.isfinite(midpoint) and midpoint > 0:
             return midpoint
@@ -30,6 +30,10 @@ def calculate_forward(quotes: Iterable[OptionQuote], time_to_expiry: float, risk
     for quote in quotes:
         mid = option_mid(quote, allow_last_price_fallback)
         if mid is not None:
+            if quote.option_type in pairs[quote.strike]:
+                raise InsufficientOptionData(
+                    f"Duplicate {quote.option_type} quote at strike {quote.strike:g}"
+                )
             pairs[quote.strike][quote.option_type] = mid
     eligible = [(strike, values["C"], values["P"]) for strike, values in pairs.items() if "C" in values and "P" in values]
     if not eligible:

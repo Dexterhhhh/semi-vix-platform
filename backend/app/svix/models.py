@@ -88,3 +88,5 @@ class SVIXResult(SVIXModel):
     calculation_quality: float = Field(ge=0, le=1)
     estimated: bool = False
     source_feed: Optional[str] = None
+    calculation_method: str = "svix-v2-cumulative-variance"
+    market_data_quality: str = "unknown"

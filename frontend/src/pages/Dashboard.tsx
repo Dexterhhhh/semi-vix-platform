@@ -27,7 +27,7 @@ export function Dashboard() {
   const [endDate, setEndDate] = useState(today)
   const [metrics, setMetrics] = useState<MetricKey[]>(['svix'])
   const validRange = startDate <= endDate
-  const current = useQuery({ queryKey: ['svix-current'], queryFn: getCurrentSVIX, retry: false })
+  const current = useQuery({ queryKey: ['svix-current'], queryFn: getCurrentSVIX, retry: false, refetchInterval: 30_000 })
   const components = useQuery({ queryKey: ['svix-components'], queryFn: getComponents, retry: false })
   const history = useQuery({ queryKey: ['svix-history', startDate, endDate], queryFn: () => getHistory(startDate, endDate), enabled: validRange, retry: false })
   const customConfig = useQuery({ queryKey: ['custom-index'], queryFn: getCustomIndex })
@@ -50,6 +50,7 @@ export function Dashboard() {
   return <main>
     <header><div><p className="eyebrow">SEMICONDUCTOR VOLATILITY</p><h1>Semi‑VIX Dashboard</h1></div><span className="status-dot">只读分析</span></header>
     <div className="cards"><SVIXCard label="SVIX 30D" value={value?.svix} accent/><SVIXCard label="Core Semi" value={value?.core}/><SVIXCard label="Memory" value={value?.memory}/><SVIXCard label="AI Semi" value={value?.ai}/></div>
+    {value && <p className={value.estimated ? 'provider-warning' : 'success'}>估值时间 {new Date(value.timestamp).toLocaleString()} · {value.source_feed ?? '来源未知'} · {value.market_data_quality ?? '质量未知'} · {value.calculation_method ?? '旧版方法'} · 数据质量评分 {(value.calculation_quality * 100).toFixed(0)}%{value.estimated ? ' · 近似结果' : ' · 严格结果'}</p>}
     <section className="panel chart-panel">
       <div className="panel-title chart-title"><div><h3>历史走势</h3><p>同色浅虚线为历史近似值，同色实线为严格计算值；可拖动底部滑块或在图内缩放</p></div><span className="chart-status">{history.isFetching ? '载入中…' : `${history.data?.length ?? 0} 个数据点${history.data?.some((point) => point.estimated) ? ` · ${history.data.filter((point) => point.estimated).length} 个近似` : ''}${history.data?.some((point) => !point.estimated) ? ` · ${history.data.filter((point) => !point.estimated).length} 个严格` : ''}`}</span></div>
       <div className="chart-controls">

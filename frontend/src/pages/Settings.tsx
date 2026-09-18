@@ -12,6 +12,7 @@ const symbols = ['SOXX', 'MU', 'SKHY', 'NVDA', 'AMD', 'AVGO']
 export function Settings() {
   const client = useQueryClient()
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: getSettings })
+  const [settingsDraft, setSettingsDraft] = useState<DashboardSettings | null>(null)
   const system = useQuery({ queryKey: ['system-status'], queryFn: getSystemStatus, refetchInterval: 10000 })
   const lifecycle = useQuery({ queryKey: ['lifecycle-status'], queryFn: getLifecycleStatus, refetchInterval: 15000 })
   const providerStatus = useQuery({ queryKey: ['provider-status'], queryFn: getProviderStatus, retry: false })
@@ -40,7 +41,11 @@ export function Settings() {
     setAlpacaFeed(configuration.data.data_feed ?? 'indicative')
   }, [configuration.data])
 
-  const saveSettingsMutation = useMutation({ mutationFn: saveSettings, onSuccess: () => client.invalidateQueries({ queryKey: ['settings'] }) })
+  useEffect(() => {
+    if (settingsQuery.data && settingsDraft === null) setSettingsDraft(settingsQuery.data)
+  }, [settingsDraft, settingsQuery.data])
+
+  const saveSettingsMutation = useMutation({ mutationFn: saveSettings, onSuccess: (saved, submitted) => { setSettingsDraft((current) => current === submitted ? saved : current); client.setQueryData(['settings'], saved) } })
   const saveProvider = useMutation({
     mutationFn: configureProvider,
     onSuccess: async () => {
@@ -54,10 +59,16 @@ export function Settings() {
   })
   const testConnection = useMutation({ mutationFn: testProviderConnection, onSuccess: (status) => client.setQueryData(['provider-status'], status) })
   const runMaintenance = useMutation({ mutationFn: runLifecycleMaintenance, onSuccess: () => client.invalidateQueries({ queryKey: ['lifecycle-status'] }) })
-  const settings = settingsQuery.data
-  const updateLifecycle = (values: Partial<DashboardSettings>) => settings && saveSettingsMutation.mutate({ ...settings, ...values })
+  const settings = settingsDraft ?? settingsQuery.data
+  const updateSettings = (values: Partial<DashboardSettings>) => {
+    if (!settings) return
+    const next = { ...settings, ...values }
+    setSettingsDraft(next)
+    saveSettingsMutation.mutate(next)
+  }
+  const updateLifecycle = updateSettings
   const formatSize = (bytes: number | null) => bytes === null ? '—' : `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  const toggle = (symbol: string) => settings && saveSettingsMutation.mutate({ ...settings, selected_symbols: settings.selected_symbols.includes(symbol) ? settings.selected_symbols.filter((item) => item !== symbol) : [...settings.selected_symbols, symbol] })
+  const toggle = (symbol: string) => settings && updateSettings({ selected_symbols: settings.selected_symbols.includes(symbol) ? settings.selected_symbols.filter((item) => item !== symbol) : [...settings.selected_symbols, symbol] })
 
   const submitProvider = (event: FormEvent) => {
     event.preventDefault()
@@ -79,13 +90,13 @@ export function Settings() {
         <label>{selectedProvider === 'IBKR' ? 'TWS / Gateway Host' : selectedProvider === 'FUTU' ? 'OpenD Host' : 'API Base URL（固定官方地址）'}<input required readOnly={selectedProvider === 'ALPACA'} value={host} onChange={(event) => setHost(event.target.value)} placeholder={selectedProvider === 'ALPACA' ? 'https://data.alpaca.markets' : 'host.docker.internal'} /></label>
         {selectedProvider !== 'ALPACA' && <label>端口<input required type="number" min="1" max="65535" value={port} onChange={(event) => setPort(event.target.value)} /></label>}
         {selectedProvider === 'IBKR' && <label>Client ID<input required type="number" min="0" value={clientId} onChange={(event) => setClientId(event.target.value)} /></label>}
-        {selectedProvider === 'ALPACA' && <label>期权数据源<select value={alpacaFeed} onChange={(event) => setAlpacaFeed(event.target.value as AlpacaFeed)}><option value="indicative">Indicative（免费测试）</option><option value="opra">OPRA（付费正式）</option></select></label>}
+        {selectedProvider === 'ALPACA' && <label>期权数据源<select value={alpacaFeed} onChange={(event) => setAlpacaFeed(event.target.value as AlpacaFeed)}><option value="indicative">Indicative（免费主数据源）</option><option value="opra">OPRA（付费正式）</option></select></label>}
         <div className="credential-grid">
           <label>API Key{selectedProvider === 'ALPACA' ? '（必填）' : '（可选）'}<input type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={configuration.data?.credentials_present ? '已保存；留空保持不变' : '未设置'} /></label>
           <label>API Secret{selectedProvider === 'ALPACA' ? '（必填）' : '（可选）'}<input type="password" autoComplete="off" value={secret} onChange={(event) => setSecret(event.target.value)} placeholder={configuration.data?.credentials_present ? '已保存；留空保持不变' : '未设置'} /></label>
           {selectedProvider !== 'ALPACA' && <label>账户标识（可选）<input type="password" autoComplete="off" value={accountIdentifier} onChange={(event) => setAccountIdentifier(event.target.value)} placeholder={configuration.data?.credentials_present ? '已保存；留空保持不变' : '未设置'} /></label>}
         </div>
-        {selectedProvider === 'ALPACA' && alpacaFeed === 'indicative' && <p className="provider-warning">免费 Indicative 的 bid/ask 是经过修改的数据。系统允许计算 SVIX，但会降低质量分；历史计算使用期权日线收盘价代理历史 BBO。</p>}
+        {selectedProvider === 'ALPACA' && alpacaFeed === 'indicative' && <p className="provider-warning">免费 Indicative 的 bid/ask 是经过修改的指示性报价。系统会持续计算并标记为估算；历史回填使用期权日线收盘成交价作为 Q(K) 代理，绝不会标记为 OPRA 或严格 BBO。</p>}
         {selectedProvider === 'ALPACA' && alpacaFeed === 'opra' && <p className="success">OPRA 为正式实时行情，需要 Alpaca 有效的付费市场数据订阅。</p>}
         <div className="form-actions"><button disabled={saveProvider.isPending || !host || !port} type="submit">{saveProvider.isPending ? '保存中…' : '保存并启用'}</button><button className="secondary" disabled={testConnection.isPending || !currentStatus?.configured} type="button" onClick={() => testConnection.mutate()}>{testConnection.isPending ? '测试中…' : '测试连接'}</button></div>
         {saveProvider.isSuccess && <p className="success">配置已加密保存并启用。</p>}
@@ -93,7 +104,7 @@ export function Settings() {
         {connectionResult && <p className={connectionResult.connected ? (connectionResult.production_ready ? 'success' : 'provider-warning') : 'error'}>{connectionResult.connected ? `连接测试成功。${connectionResult.warning ?? ''}` : `连接失败：${connectionResult.error ?? '服务不可用'}`}</p>}
       </form>
     </section>
-    <section className="panel form"><h3>计算设置</h3><label>历史/常规刷新频率<select value={settings?.refresh_frequency_minutes ?? 15} onChange={(event) => settings && saveSettingsMutation.mutate({ ...settings, refresh_frequency_minutes: Number(event.target.value) })}><option value="5">5 分钟</option><option value="15">15 分钟</option><option value="30">30 分钟</option><option value="1440">每日</option></select></label><label>日内独立计算频率<select value={settings?.intraday_refresh_seconds ?? 300} onChange={(event) => settings && saveSettingsMutation.mutate({ ...settings, intraday_refresh_seconds: Number(event.target.value) })}><option value="30">每 30 秒</option><option value="60">每 60 秒</option><option value="120">每 2 分钟</option><option value="300">每 5 分钟</option><option value="900">每 15 分钟</option></select><small>仅在 NYSE 交易窗口内生效；免费源最低建议30秒</small></label><p>标的范围</p><div className="symbols">{symbols.map((symbol) => <label key={symbol}><input type="checkbox" checked={settings?.selected_symbols.includes(symbol) ?? false} onChange={() => toggle(symbol)}/> {symbol}</label>)}</div></section>
+    <section className="panel form"><h3>计算设置</h3><label>历史/常规刷新频率<select value={settings?.refresh_frequency_minutes ?? 15} onChange={(event) => updateSettings({ refresh_frequency_minutes: Number(event.target.value) })}><option value="5">5 分钟</option><option value="15">15 分钟</option><option value="30">30 分钟</option><option value="1440">每日</option></select></label><label>日内独立计算频率<select value={settings?.intraday_refresh_seconds ?? 300} onChange={(event) => updateSettings({ intraday_refresh_seconds: Number(event.target.value) })}><option value="30">每 30 秒</option><option value="60">每 60 秒</option><option value="120">每 2 分钟</option><option value="300">每 5 分钟</option><option value="900">每 15 分钟</option></select><small>仅在 NYSE 交易窗口内生效；免费源最低建议30秒</small></label><p>标的范围</p><div className="symbols">{symbols.map((symbol) => <label key={symbol}><input type="checkbox" checked={settings?.selected_symbols.includes(symbol) ?? false} onChange={() => toggle(symbol)}/> {symbol}</label>)}</div>{saveSettingsMutation.isError && <p className="error">设置保存失败；本地草稿已保留，请重试。</p>}</section>
     <CustomIndexEditor/>
     <section className="panel lifecycle-panel">
       <div className="panel-title"><div><h3>数据生命周期</h3><p>先完成每日聚合，再分批清理已有成功计算覆盖的原始期权数据。</p></div><button className="secondary" disabled={runMaintenance.isPending} onClick={() => runMaintenance.mutate()}>{runMaintenance.isPending ? '已加入队列…' : '立即维护'}</button></div>

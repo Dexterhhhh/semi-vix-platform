@@ -1,4 +1,4 @@
-"""Retryable worker tasks.  No task loop runs inside the FastAPI process."""
+"""Idempotent task functions invoked by the lightweight Go scheduler."""
 
 from __future__ import annotations
 
@@ -11,8 +11,6 @@ from sqlalchemy import func
 
 from app.database.database import SessionLocal
 from app.database.models import CalculationJob, MarketCollectionRun, OptionSnapshot, ProviderCredential, SystemSettings
-from app.data.exceptions import ProviderUnavailableError
-from app.scheduler.celery_app import celery_app
 from app.scheduler.market_hours import market_status
 from app.services.market_refresh import refresh_market_data
 from app.services.svix_calculator import calculate_svix
@@ -50,11 +48,10 @@ def _selected_symbols(database) -> tuple[str, ...]:
 
 
 def _log(task: str, status: str, started: float, **details: object) -> None:
-    logger.info(json.dumps({"time": datetime.now(timezone.utc).isoformat(), "service": "worker", "task": task, "status": status, "duration": round(time.monotonic() - started, 3), **details}, default=str))
+    logger.info(json.dumps({"time": datetime.now(timezone.utc).isoformat(), "service": "go-scheduler-task", "task": task, "status": status, "duration": round(time.monotonic() - started, 3), **details}, default=str))
 
 
-@celery_app.task(bind=True, autoretry_for=(ConnectionError, TimeoutError, ProviderUnavailableError), retry_backoff=True, retry_backoff_max=300, retry_kwargs={"max_retries": 5})
-def collect_market_data_task(self) -> dict[str, object]:
+def collect_market_data_task() -> dict[str, object]:
     started = time.monotonic()
     now = datetime.now(timezone.utc)
     market = market_status(now)
@@ -86,7 +83,12 @@ def collect_market_data_task(self) -> dict[str, object]:
         database.commit()
         summary = refresh_market_data()
         run = database.get(MarketCollectionRun, run.id)
-        run.status = "COMPLETED"
+        if int(summary.get("option_quotes_saved", 0)) == 0:
+            run.status = "NO_VALID_DATA"
+        elif int(summary.get("symbols_failed", 0)) > 0:
+            run.status = "PARTIAL"
+        else:
+            run.status = "COMPLETED"
         run.finished_at = datetime.now(timezone.utc)
         run.stock_quotes_saved = int(summary.get("stock_quotes_saved", 0))
         run.option_quotes_saved = int(summary.get("option_quotes_saved", 0))
@@ -94,9 +96,9 @@ def collect_market_data_task(self) -> dict[str, object]:
         run.symbols_failed = int(summary.get("symbols_failed", 0))
         database.commit()
         if run.option_quotes_saved > 0:
-            calculate_latest_svix_task.delay()
+            calculate_latest_svix_task()
         _log("collect_market_data", "success", started, summary=summary)
-        return {**summary, "status": "COMPLETED", "market": market.to_dict(), "interval_seconds": interval_seconds}
+        return {**summary, "status": run.status, "market": market.to_dict(), "interval_seconds": interval_seconds}
     except Exception as exc:
         database.rollback()
         if run is not None:
@@ -110,8 +112,7 @@ def collect_market_data_task(self) -> dict[str, object]:
         database.close()
 
 
-@celery_app.task(bind=True, autoretry_for=(ConnectionError, TimeoutError), retry_backoff=True, retry_backoff_max=300, retry_kwargs={"max_retries": 3})
-def run_historical_calculation_task(self, job_id: int) -> dict[str, object]:
+def run_historical_calculation_task(job_id: int) -> dict[str, object]:
     started = time.monotonic()
     database = SessionLocal()
     try:
@@ -141,7 +142,13 @@ def run_historical_calculation_task(self, job_id: int) -> dict[str, object]:
         attempted_dates = {timestamp.date() for (timestamp,) in attempted_query.all()}
         estimated_records = sum(1 for item in results if getattr(item, "estimated", False))
         skipped_records = max(0, len(attempted_dates) - len(results))
-        job.status, job.progress, job.finished_at = "COMPLETED", 100, datetime.now(timezone.utc)
+        if not results:
+            final_status = "NO_VALID_DATA"
+        elif skipped_records:
+            final_status = "PARTIAL"
+        else:
+            final_status = "COMPLETED"
+        job.status, job.progress, job.finished_at = final_status, 100, datetime.now(timezone.utc)
         job.result_summary = json.dumps({**backfill_summary, "records_calculated": len(results), "estimated_records": estimated_records, "skipped_records": skipped_records, "stage": "已完成"})
         database.commit()
         result = {"job_id": job_id, "status": job.status, "records_calculated": len(results)}
@@ -159,8 +166,7 @@ def run_historical_calculation_task(self, job_id: int) -> dict[str, object]:
         database.close()
 
 
-@celery_app.task(bind=True, autoretry_for=(ConnectionError, TimeoutError), retry_backoff=True, retry_backoff_max=300, retry_kwargs={"max_retries": 3})
-def calculate_latest_svix_task(self) -> dict[str, object]:
+def calculate_latest_svix_task() -> dict[str, object]:
     """Strict calculation from the latest collected two-sided option snapshot."""
     database = SessionLocal()
     try:
@@ -173,14 +179,18 @@ def calculate_latest_svix_task(self) -> dict[str, object]:
         if latest_timestamp is None:
             return {"records_calculated": 0, "reason": "no_option_snapshot"}
         calculation_date = latest_timestamp.date()
-        results = calculate_svix(database, calculation_date, calculation_date, "daily", strict=True)
-        return {"records_calculated": len(results), "calculation_date": calculation_date.isoformat(), "method": "strict"}
+        strict = not (
+            configured
+            and configured.provider == "ALPACA"
+            and (configured.data_feed or "indicative").lower() == "indicative"
+        )
+        results = calculate_svix(database, calculation_date, calculation_date, "daily", strict=strict)
+        return {"records_calculated": len(results), "calculation_date": calculation_date.isoformat(), "method": "strict" if strict else "indicative_estimate"}
     finally:
         database.close()
 
 
-@celery_app.task(bind=True, autoretry_for=(ConnectionError, TimeoutError), retry_backoff=True, retry_kwargs={"max_retries": 3})
-def data_lifecycle_maintenance_task(self, force: bool = False) -> dict[str, object]:
+def data_lifecycle_maintenance_task(force: bool = False) -> dict[str, object]:
     started = time.monotonic()
     database = SessionLocal()
     try:

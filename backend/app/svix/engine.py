@@ -30,16 +30,23 @@ class SVIXEngine:
         for quote in quotes:
             if quote.symbol == symbol:
                 by_expiry[quote.expiry].append(quote)
-        if not approximate:
-            variances = [calculate_expiry_variance(symbol, expiry, chain, valuation_time, self.risk_free_rate, self.allow_last_price_fallback) for expiry, chain in by_expiry.items()]
-            return interpolate_term_structure(symbol, variances, self.target_days)
         variances = []
         for expiry, chain in by_expiry.items():
             try:
-                variances.append(calculate_expiry_variance(symbol, expiry, chain, valuation_time, self.risk_free_rate, True, fallback_forward_price=underlying_price))
+                variances.append(
+                    calculate_expiry_variance(
+                        symbol,
+                        expiry,
+                        chain,
+                        valuation_time,
+                        self.risk_free_rate,
+                        self.allow_last_price_fallback if not approximate else True,
+                        fallback_forward_price=underlying_price if approximate else None,
+                    )
+                )
             except SVIXError:
                 continue
-        return interpolate_term_structure(symbol, variances, self.target_days, allow_nearest_fallback=True)
+        return interpolate_term_structure(symbol, variances, self.target_days, allow_nearest_fallback=approximate)
 
     @staticmethod
     def _normalize(weights: Mapping[str, float]) -> dict[str, float]:
@@ -59,8 +66,9 @@ class SVIXEngine:
         correlation = calculate_correlation_matrix({symbol: historical_returns[symbol] for symbol in available})
         return calculate_portfolio_variance(component_weights, {symbol: volatilities[symbol] for symbol in available}, correlation).volatility
 
-    def calculate(self, option_quotes: Mapping[str, Iterable[OptionQuote]], historical_returns: Mapping[str, Iterable[float]], valuation_time: datetime, soxx_constituent_exposure: Mapping[str, float] | None = None, underlying_prices: Mapping[str, float] | None = None, approximate: bool = False, source_feed: str | None = None) -> SVIXResult:
-        input_available = set(option_quotes) & set(historical_returns)
+    def calculate(self, option_quotes: Mapping[str, Iterable[OptionQuote]], historical_returns: Mapping[str, Iterable[float]], valuation_time: datetime, soxx_constituent_exposure: Mapping[str, float] | None = None, underlying_prices: Mapping[str, float] | None = None, approximate: bool = False, source_feed: str | None = None, market_data_quality: str = "unknown") -> SVIXResult:
+        original_weights = combined_asset_weights()
+        input_available = set(option_quotes) & set(historical_returns) & set(original_weights)
         terms: dict[str, TermStructureResult] = {}
         for symbol in input_available:
             try:
@@ -71,7 +79,6 @@ class SVIXEngine:
         available = set(terms)
         if "SOXX" not in available or not available.intersection({"MU", "SKHY"}) or not available.intersection({"NVDA", "AMD", "AVGO"}):
             raise ValueError("Core, Memory and AI components each require at least one available asset")
-        original_weights = combined_asset_weights()
         coverage = sum(weight for symbol, weight in original_weights.items() if symbol in available) / sum(original_weights.values())
         base_weights = self._normalize({symbol: weight for symbol, weight in original_weights.items() if symbol in available})
         overlap = deoverlap_weights(base_weights, soxx_constituent_exposure)
@@ -80,7 +87,8 @@ class SVIXEngine:
         portfolio = calculate_portfolio_variance(overlap.adjusted_weights, volatilities, correlation)
         memory = self._component_volatility(("MU", "SKHY"), overlap.adjusted_weights, volatilities, historical_returns)
         ai = self._component_volatility(("NVDA", "AMD", "AVGO"), overlap.adjusted_weights, volatilities, historical_returns)
-        delayed_or_proxy = any(quote.delayed for chain in option_quotes.values() for quote in chain)
+        delayed_or_proxy = any(quote.delayed for symbol in available for quote in option_quotes[symbol])
         source_quality = 0.65 if delayed_or_proxy else 1.0
         quality = min(term.calculation_quality for term in terms.values()) * coverage * source_quality
-        return SVIXResult(timestamp=valuation_time, svix=portfolio.volatility * 100.0, core_vol=volatilities["SOXX"] * 100.0, memory_vol=memory * 100.0, ai_vol=ai * 100.0, weights=overlap.adjusted_weights, correlation_matrix=correlation.matrix, calculation_quality=quality, estimated=approximate, source_feed=source_feed)
+        method = "svix-v2-proxy-estimate" if approximate else "svix-v2-cumulative-variance"
+        return SVIXResult(timestamp=valuation_time, svix=portfolio.volatility * 100.0, core_vol=volatilities["SOXX"] * 100.0, memory_vol=memory * 100.0, ai_vol=ai * 100.0, weights=overlap.adjusted_weights, correlation_matrix=correlation.matrix, calculation_quality=quality, estimated=approximate, source_feed=source_feed, market_data_quality=market_data_quality, calculation_method=method)

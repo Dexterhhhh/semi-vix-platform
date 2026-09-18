@@ -1,11 +1,11 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.data.models import OptionContract, OptionQuote, StockQuote
 from app.data.provider import MarketDataProvider
 from app.database.database import Base, SessionLocal, engine
 from app.database.models import OptionSnapshot, StockSnapshot
-from app.services.market_collector import collect_option_snapshot
+from app.services.market_collector import _select_contracts, collect_option_snapshot
 
 
 class PartiallyAvailableProvider(MarketDataProvider):
@@ -48,3 +48,17 @@ def test_collector_commits_available_symbols_when_one_symbol_fails() -> None:
         assert database.query(OptionSnapshot).count() == 2
     finally:
         database.close()
+
+
+def test_contract_sampling_keeps_both_target_expiries_and_call_put_pairs() -> None:
+    now = datetime.now(timezone.utc)
+    contracts = [
+        OptionContract(contract_id=f"FAKE:NVDA:{days}:{strike}:{right}", symbol="NVDA", expiry=now + timedelta(days=days), strike=float(strike), option_type=right, provider="FAKE")
+        for days in (20, 40, 180)
+        for strike in range(50, 151)
+        for right in ("C", "P")
+    ]
+    selected = _select_contracts(contracts, 100.0, 120)
+    assert {round((item.expiry - now).total_seconds() / 86400) for item in selected} == {20, 40}
+    assert len(selected) == 120
+    assert {(item.expiry, item.strike) for item in selected if item.option_type == "C"} == {(item.expiry, item.strike) for item in selected if item.option_type == "P"}

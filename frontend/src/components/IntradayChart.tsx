@@ -79,7 +79,7 @@ export function IntradayChart({ data, metrics, marketOpen, collectionEnd, market
   return (
     <div className="intraday-chart-frame">
       <div ref={element} className="intraday-chart" role="img" aria-label="自动更新的单日 SVIX 分时走势图" />
-      {!data.length && <div className="intraday-chart-empty">等待本交易日第一条严格计算数据…</div>}
+      {!data.length && <div className="intraday-chart-empty">等待本交易日第一条可用计算数据…</div>}
     </div>
   )
 }

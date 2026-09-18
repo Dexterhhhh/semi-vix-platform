@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import logging
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -20,6 +22,36 @@ from app.database.models import ProviderCredential
 
 logger = logging.getLogger(__name__)
 DEFAULT_SYMBOLS = DEFAULT_UNIVERSE
+
+
+def _select_contracts(contracts, reference_price: float | None, limit: int):
+    """Select paired strikes from both expiries surrounding the 30-day target."""
+    if len(contracts) <= limit:
+        return list(contracts)
+    today = datetime.now(timezone.utc).date()
+    target = today + timedelta(days=30)
+    expiries = sorted({contract.expiry.date() for contract in contracts if contract.expiry.date() > today})
+    if not expiries:
+        expiries = sorted({contract.expiry.date() for contract in contracts})
+    lower = max((value for value in expiries if value <= target), default=None)
+    upper = min((value for value in expiries if value >= target), default=None)
+    selected_expiries = list(dict.fromkeys(value for value in (lower, upper) if value))
+    if len(selected_expiries) < min(2, len(expiries)):
+        selected_expiries = sorted(expiries, key=lambda value: abs((value - target).days))[:2]
+    strike_budget = max(1, limit // max(2, len(selected_expiries) * 2))
+    selected = []
+    for expiry in selected_expiries:
+        by_strike = defaultdict(list)
+        for contract in contracts:
+            if contract.expiry.date() == expiry:
+                by_strike[contract.strike].append(contract)
+        if not by_strike:
+            continue
+        reference = reference_price or sorted(by_strike)[len(by_strike) // 2]
+        strikes = sorted(by_strike, key=lambda strike: (abs(strike - reference), strike))[:strike_budget]
+        for strike in sorted(strikes):
+            selected.extend(sorted(by_strike[strike], key=lambda item: item.option_type))
+    return selected[:limit]
 
 
 @dataclass(frozen=True)
@@ -70,6 +102,7 @@ async def collect_option_snapshot(symbols: Iterable[str], database: Session, pro
         data_feed=configured.data_feed if configured else None,
     )
     summary = CollectionSummary(provider=market_provider.provider_name, started_at=datetime.now(timezone.utc), symbols_requested=len(requested))
+    batch_id = str(uuid4())
     stock_repository = QuoteRepository(database)
     option_repository = OptionRepository(database)
     try:
@@ -78,7 +111,7 @@ async def collect_option_snapshot(symbols: Iterable[str], database: Session, pro
             try:
                 with database.begin_nested():
                     stock_quote = await _bounded(market_provider.get_stock_quote(symbol), request_timeout_seconds)
-                    stock_repository.save(stock_quote)
+                    stock_repository.save(stock_quote.model_copy(update={"batch_id": batch_id, "received_at": datetime.now(timezone.utc)}))
                     summary.stock_quotes_saved += 1
 
                     contracts = await _bounded(market_provider.get_option_chain(symbol), request_timeout_seconds)
@@ -88,9 +121,11 @@ async def collect_option_snapshot(symbols: Iterable[str], database: Session, pro
                         continue
 
                     quotes = []
-                    for contract in contracts[:max_contracts_per_symbol]:
+                    selected_contracts = _select_contracts(contracts, stock_quote.price, max_contracts_per_symbol)
+                    for contract in selected_contracts:
                         try:
-                            quotes.append(await _bounded(market_provider.get_option_quote(contract), request_timeout_seconds))
+                            quote = await _bounded(market_provider.get_option_quote(contract), request_timeout_seconds)
+                            quotes.append(quote.model_copy(update={"batch_id": batch_id, "received_at": datetime.now(timezone.utc)}))
                         except asyncio.TimeoutError:
                             summary.errors.append(CollectionError(symbol=symbol.upper(), code="QUOTE_TIMEOUT", message="Option quote request timed out"))
                         except Exception as exc:

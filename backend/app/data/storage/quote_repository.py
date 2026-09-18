@@ -19,12 +19,12 @@ class QuoteRepository:
         self.database = database
 
     def save(self, quote: StockQuote) -> StockSnapshot:
-        snapshot = StockSnapshot(timestamp=quote.timestamp, provider=quote.provider, symbol=quote.symbol, price=quote.price, bid=quote.bid, ask=quote.ask, volume=quote.volume, delayed=quote.delayed)
+        snapshot = StockSnapshot(timestamp=quote.timestamp, provider=quote.provider, symbol=quote.symbol, price=quote.price, bid=quote.bid, ask=quote.ask, volume=quote.volume, delayed=quote.delayed, feed=quote.feed, price_type=quote.price_type, received_at=quote.received_at, batch_id=quote.batch_id)
         self.database.add(snapshot)
         return snapshot
 
     def save_many(self, quotes: list[StockQuote]) -> list[StockSnapshot]:
-        snapshots = [StockSnapshot(timestamp=quote.timestamp, provider=quote.provider, symbol=quote.symbol, price=quote.price, bid=quote.bid, ask=quote.ask, volume=quote.volume, delayed=quote.delayed) for quote in quotes]
+        snapshots = [StockSnapshot(timestamp=quote.timestamp, provider=quote.provider, symbol=quote.symbol, price=quote.price, bid=quote.bid, ask=quote.ask, volume=quote.volume, delayed=quote.delayed, feed=quote.feed, price_type=quote.price_type, received_at=quote.received_at, batch_id=quote.batch_id) for quote in quotes]
         self.database.add_all(snapshots)
         return snapshots
 

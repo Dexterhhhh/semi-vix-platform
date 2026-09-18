@@ -27,7 +27,7 @@ class IBKRProvider(MarketDataProvider):
     async def get_stock_quote(self, symbol: str) -> StockQuote:
         symbol = normalize_symbol(symbol)
         raw = await self.client.stock_quote(symbol)
-        return StockQuote(symbol=symbol, timestamp=datetime.now(timezone.utc), price=optional_float(raw.get("price")), bid=optional_float(raw.get("bid")), ask=optional_float(raw.get("ask")), volume=optional_int(raw.get("volume")), provider=self.provider_name, delayed=raw.get("delayed"))
+        return StockQuote(symbol=symbol, timestamp=datetime.now(timezone.utc), price=optional_float(raw.get("price")), bid=optional_float(raw.get("bid")), ask=optional_float(raw.get("ask")), volume=optional_int(raw.get("volume")), provider=self.provider_name, delayed=raw.get("delayed"), feed="smart", price_type="bbo")
 
     async def get_option_chain(self, symbol: str, expiry: date | datetime | None = None) -> list[OptionContract]:
         symbol = normalize_symbol(symbol)
@@ -36,4 +36,4 @@ class IBKRProvider(MarketDataProvider):
 
     async def get_option_quote(self, contract: OptionContract) -> OptionQuote:
         raw = await self.client.option_quote(contract.symbol, contract.expiry.strftime("%Y%m%d"), contract.strike, contract.option_type)
-        return OptionQuote(contract_id=contract.contract_id, symbol=contract.symbol, expiry=contract.expiry, strike=contract.strike, option_type=contract.option_type, timestamp=datetime.now(timezone.utc), bid=optional_float(raw.get("bid")), ask=optional_float(raw.get("ask")), last=optional_float(raw.get("last")), volume=optional_int(raw.get("volume")), open_interest=optional_int(raw.get("open_interest")), implied_volatility=optional_float(raw.get("implied_volatility")), provider=self.provider_name, delayed=raw.get("delayed"))
+        return OptionQuote(contract_id=contract.contract_id, symbol=contract.symbol, expiry=contract.expiry, strike=contract.strike, option_type=contract.option_type, timestamp=datetime.now(timezone.utc), bid=optional_float(raw.get("bid")), ask=optional_float(raw.get("ask")), last=optional_float(raw.get("last")), volume=optional_int(raw.get("volume")), open_interest=optional_int(raw.get("open_interest")), implied_volatility=optional_float(raw.get("implied_volatility")), provider=self.provider_name, delayed=raw.get("delayed"), feed="smart", price_type="bbo")

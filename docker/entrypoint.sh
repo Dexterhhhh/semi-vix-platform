@@ -15,15 +15,13 @@ if [[ ! "${POSTGRES_USER}" =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]]; then
   exit 1
 fi
 
-# This image always uses its embedded PostgreSQL and Redis. Rebuild the URLs
+# This image always uses its embedded PostgreSQL. Rebuild the URL
 # here so an existing multi-container .env continues to work without edits.
 database_password_encoded="$(python -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["POSTGRES_PASSWORD"], safe=""))')"
 export DATABASE_URL="postgresql+psycopg://${POSTGRES_USER}:${database_password_encoded}@127.0.0.1:5432/${POSTGRES_DB}"
-export REDIS_URL="redis://127.0.0.1:6379/0"
 
 install -d -m 0700 -o postgres -g postgres "${PGDATA}"
 install -d -m 0775 -o postgres -g postgres /var/run/postgresql
-install -d -m 0750 -o redis -g redis /var/lib/redis
 install -d -m 0775 -o svix -g svix /run/svix
 rm -f /run/svix/migrations-complete
 

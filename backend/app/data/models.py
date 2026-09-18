@@ -29,7 +29,7 @@ class _MarketDataModel(BaseModel):
             raise ValueError("identifier must not be empty")
         return normalized
 
-    @field_validator("timestamp", "expiry", mode="after", check_fields=False)
+    @field_validator("timestamp", "expiry", "received_at", mode="after", check_fields=False)
     @classmethod
     def require_aware_timestamp(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
@@ -46,6 +46,10 @@ class StockQuote(_MarketDataModel):
     volume: Optional[int] = Field(default=None, ge=0)
     provider: str
     delayed: Optional[bool] = None
+    feed: Optional[str] = None
+    price_type: Literal["bbo", "trade", "adjusted_close", "raw_close", "unknown"] = "unknown"
+    received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    batch_id: Optional[str] = None
 
     @field_validator("price", "bid", "ask", mode="after")
     @classmethod
@@ -117,6 +121,10 @@ class OptionQuote(_MarketDataModel):
     implied_volatility: Optional[float] = None
     provider: str
     delayed: Optional[bool] = None
+    feed: Optional[str] = None
+    price_type: Literal["bbo", "indicative_quote", "trade_close_proxy", "unknown"] = "unknown"
+    received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    batch_id: Optional[str] = None
 
     @field_validator("option_type", mode="before")
     @classmethod

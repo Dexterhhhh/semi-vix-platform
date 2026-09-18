@@ -1,4 +1,4 @@
-"""Persistent calculation-job lifecycle and Celery dispatch boundary."""
+"""Persistent calculation-job lifecycle consumed by the Go scheduler."""
 
 from __future__ import annotations
 
@@ -18,7 +18,20 @@ def create_historical_job(database: Session, start_date: date, end_date: date, f
 
 
 def dispatch_historical_job(job_id: int) -> None:
-    # Delayed import keeps API import lightweight and makes dispatch mockable.
-    from app.scheduler.tasks import run_historical_calculation_task
+    # The database row is the durable queue. The Go scheduler polls PENDING
+    # jobs, so dispatch cannot be lost when an in-memory broker restarts.
+    if job_id <= 0:
+        raise ValueError("job_id must be positive")
 
-    run_historical_calculation_task.delay(job_id)
+
+def recover_interrupted_jobs(database: Session) -> int:
+    """Return jobs abandoned by a previous API process to the durable queue."""
+    jobs = database.query(CalculationJob).filter_by(status="RUNNING").all()
+    for job in jobs:
+        job.status = "PENDING"
+        job.progress = 0
+        job.started_at = None
+        job.error_message = None
+    if jobs:
+        database.commit()
+    return len(jobs)

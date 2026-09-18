@@ -9,6 +9,16 @@ COPY frontend/ ./
 RUN npm run build
 
 
+FROM golang:1.23-bookworm AS go-build
+
+WORKDIR /build
+COPY go.mod ./
+COPY go/ ./go/
+RUN CGO_ENABLED=0 go test ./go/... \
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/svix-engine ./go/cmd/svix-engine \
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/svix-scheduler ./go/cmd/svix-scheduler
+
+
 FROM python:3.12-slim-bookworm AS python-build
 
 ENV PIP_NO_CACHE_DIR=1
@@ -29,31 +39,35 @@ FROM postgres:16-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOME=/home/svix \
-    PGDATA=/var/lib/postgresql/data
+    PGDATA=/var/lib/postgresql/data \
+    SVIX_GO_ENGINE_URL=http://127.0.0.1:8090
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nginx redis-server supervisor curl ca-certificates \
+    && apt-get install -y --no-install-recommends nginx supervisor curl ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /etc/nginx/sites-enabled/default \
     && useradd --system --create-home --home-dir /home/svix --shell /usr/sbin/nologin svix \
-    && install -d -o svix -g svix /opt/svix/backend /run/svix \
-    && install -d -o redis -g redis /var/lib/redis
+    && install -d -o svix -g svix /opt/svix/backend /run/svix
 
 COPY --from=python-build /usr/local /usr/local
+COPY --from=go-build /out/svix-engine /usr/local/bin/svix-engine
+COPY --from=go-build /out/svix-scheduler /usr/local/bin/svix-scheduler
 COPY --from=frontend-build /build/frontend/dist /usr/share/nginx/html
 COPY --chown=svix:svix backend/ /opt/svix/backend/
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/supervisord.conf /etc/supervisor/supervisord.conf
-COPY docker/entrypoint.sh docker/start-backend.sh docker/wait-for-migrations.sh /usr/local/bin/
+COPY docker/entrypoint.sh docker/start-backend.sh /usr/local/bin/
 COPY docker/ensure_database.py /opt/svix/ensure_database.py
 
-RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/start-backend.sh /usr/local/bin/wait-for-migrations.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/start-backend.sh
 
 WORKDIR /opt/svix/backend
 EXPOSE 80
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
-  CMD curl --fail --silent http://127.0.0.1/health >/dev/null || exit 1
+  CMD curl --fail --silent http://127.0.0.1/health >/dev/null \
+    && curl --fail --silent http://127.0.0.1:8090/health >/dev/null \
+    && supervisorctl status scheduler | grep -q RUNNING \
+    || exit 1
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-

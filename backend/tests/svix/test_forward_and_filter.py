@@ -32,3 +32,14 @@ def test_filter_rejects_missing_k0_pair() -> None:
     forward = calculate_forward(chain, 30 / 365)
     with pytest.raises(InsufficientOptionData):
         filter_otm_options("NVDA", VALUATION_TIME + timedelta(days=30), chain, select_k0((quote.strike for quote in chain), forward.forward_price), forward)
+
+
+def test_two_consecutive_zero_bid_quotes_truncate_the_call_wing() -> None:
+    expiry = VALUATION_TIME + timedelta(days=30)
+    chain = make_chain("NVDA", expiry)
+    template = next(quote for quote in chain if quote.option_type == "C")
+    for strike in (120.0, 130.0, 140.0):
+        chain.append(template.model_copy(update={"contract_id": f"TEST:NVDA:{strike}:C", "strike": strike, "bid": 0.0, "ask": 10.0}))
+    forward = calculate_forward(chain, 30 / 365)
+    filtered = filter_otm_options("NVDA", expiry, chain, select_k0((quote.strike for quote in chain), forward.forward_price), forward)
+    assert [item.strike for item in filtered.options] == [90.0, 100.0, 110.0]

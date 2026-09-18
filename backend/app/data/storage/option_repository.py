@@ -17,7 +17,7 @@ class OptionRepository:
 
     @staticmethod
     def _snapshot(quote: OptionQuote) -> OptionSnapshot:
-        return OptionSnapshot(timestamp=quote.timestamp, provider=quote.provider, contract_id=quote.contract_id, symbol=quote.symbol, expiry=quote.expiry, strike=quote.strike, option_type=quote.option_type, bid=quote.bid, ask=quote.ask, last=quote.last, volume=quote.volume, open_interest=quote.open_interest, implied_volatility=quote.implied_volatility, delayed=quote.delayed)
+        return OptionSnapshot(timestamp=quote.timestamp, provider=quote.provider, contract_id=quote.contract_id, symbol=quote.symbol, expiry=quote.expiry, strike=quote.strike, option_type=quote.option_type, bid=quote.bid, ask=quote.ask, last=quote.last, volume=quote.volume, open_interest=quote.open_interest, implied_volatility=quote.implied_volatility, delayed=quote.delayed, feed=quote.feed, price_type=quote.price_type, received_at=quote.received_at, batch_id=quote.batch_id)
 
     def save(self, quote: OptionQuote) -> OptionSnapshot:
         snapshot = self._snapshot(quote)

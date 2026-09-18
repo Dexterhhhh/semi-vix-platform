@@ -143,11 +143,11 @@ tmp_env="$(mktemp)"
   printf 'JWT_EXPIRE_MINUTES=15\nREFRESH_EXPIRE_DAYS=7\n'
   printf 'CORS_ORIGINS=http://localhost:8080\nCOOKIE_SECURE=false\n'
   printf 'SVIX_BIND_ADDRESS=127.0.0.1\nSVIX_HTTP_PORT=%s\n' "${dashboard_port}"
-  printf 'DATA_PROVIDER=IBKR\nINSTALL_FUTU=false\n'
+  printf 'DATA_PROVIDER=ALPACA\nINSTALL_FUTU=false\n'
   printf 'IBKR_HOST=host.docker.internal\nIBKR_PORT=7497\nIBKR_CLIENT_ID=19\n'
   printf 'FUTU_HOST=host.docker.internal\nFUTU_PORT=11111\n'
   printf 'ALPACA_BASE_URL=https://data.alpaca.markets\nALPACA_FEED=indicative\n'
-  printf 'REDIS_URL=redis://127.0.0.1:6379/0\nMARKET_REFRESH_MINUTES=15\nSVIX_CALCULATION_MINUTES=15\n'
+  printf 'MARKET_REFRESH_MINUTES=15\nSVIX_CALCULATION_MINUTES=15\n'
   printf 'NPM_REGISTRY=https://registry.npmmirror.com\nPIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple\n'
   printf 'POSTGRES_DB=svix\nPOSTGRES_USER=svix\nPOSTGRES_PASSWORD=%s\n' "${postgres_password}"
 } >"${tmp_env}"

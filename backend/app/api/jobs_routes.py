@@ -65,8 +65,30 @@ def create_job(payload: JobCreateRequest, _: AdminAccount = Depends(get_current_
     try:
         dispatch_historical_job(job.id)
     except Exception:
-        # Job remains visible and retryable even if Redis is temporarily unavailable.
-        job.error_message = "Task dispatch pending"
+        job.status = "DISPATCH_FAILED"
+        job.error_message = "任务分发失败；可在队列恢复后重试"
+        database.commit()
+    return _response(job)
+
+
+@router.post("/{job_id}/retry", response_model=JobResponse, status_code=202)
+def retry_job(job_id: int, _: AdminAccount = Depends(get_current_admin), database: Session = Depends(get_db)) -> JobResponse:
+    job = database.get(CalculationJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Calculation job not found")
+    if job.status not in {"DISPATCH_FAILED", "FAILED", "NO_VALID_DATA"}:
+        raise HTTPException(status_code=409, detail="只有分发失败、执行失败或无有效数据的任务可以重试")
+    job.status = "PENDING"
+    job.progress = 0
+    job.started_at = None
+    job.finished_at = None
+    job.error_message = None
+    database.commit()
+    try:
+        dispatch_historical_job(job.id)
+    except Exception:
+        job.status = "DISPATCH_FAILED"
+        job.error_message = "任务分发失败；可在队列恢复后重试"
         database.commit()
     return _response(job)
 

@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from app.svix.correlation import calculate_correlation_matrix
+from app.svix.exceptions import InsufficientCorrelationData
 from app.svix.engine import SVIXEngine
 from app.svix.models import CorrelationMatrix
 from app.svix.portfolio import calculate_portfolio_variance
@@ -47,6 +48,23 @@ def test_weighted_correlation_requires_historical_windows() -> None:
         calculate_correlation_matrix({"A": [0.01] * 60, "B": [0.02] * 60})
 
 
+def test_zero_variance_history_is_rejected() -> None:
+    with pytest.raises(InsufficientCorrelationData, match="zero-variance"):
+        calculate_correlation_matrix({"A": [0.0] * 260, "B": np.sin(np.arange(260)).tolist()})
+
+
+def test_unrelated_symbol_does_not_change_standard_index() -> None:
+    symbols = ("SOXX", "MU", "SKHY", "NVDA", "AMD", "AVGO")
+    option_quotes = {symbol: two_expiry_chain(symbol) for symbol in symbols}
+    returns = {symbol: (0.001 * np.sin(np.arange(260) / (index + 2)) + 0.0001 * index).tolist() for index, symbol in enumerate(symbols)}
+    baseline = SVIXEngine().calculate(option_quotes, returns, VALUATION_TIME)
+    option_quotes["TSM"] = two_expiry_chain("TSM")
+    returns["TSM"] = (0.001 * np.cos(np.arange(260) / 3)).tolist()
+    with_extra = SVIXEngine().calculate(option_quotes, returns, VALUATION_TIME)
+    assert with_extra.svix == pytest.approx(baseline.svix)
+    assert with_extra.weights == baseline.weights
+
+
 def test_approximate_engine_uses_spot_forward_and_single_valid_expiry() -> None:
     symbols = ("SOXX", "MU", "NVDA", "AMD", "AVGO")
     expiry = VALUATION_TIME + timedelta(days=24)
@@ -60,4 +78,5 @@ def test_approximate_engine_uses_spot_forward_and_single_valid_expiry() -> None:
     result = SVIXEngine().calculate(option_quotes, returns, VALUATION_TIME, underlying_prices={symbol: 100.0 for symbol in symbols}, approximate=True)
     assert result.svix > 0
     assert result.estimated is True
+    assert result.calculation_method == "svix-v2-proxy-estimate"
     assert result.calculation_quality < 0.2

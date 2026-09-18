@@ -129,7 +129,7 @@ def current_custom_index(_: AdminAccount = Depends(get_current_admin), database:
         daily = database.query(CustomIndexDaily).filter_by(custom_index_id=index.id, version_id=version.id).order_by(CustomIndexDaily.date.desc()).first()
         if daily is None:
             raise HTTPException(404, "No custom index calculation is available")
-        return CustomIndexPoint(timestamp=datetime.combine(daily.date, time.min, tzinfo=timezone.utc), value=daily.value_close, calculation_quality=daily.min_calculation_quality, estimated=daily.estimated, source_feed=daily.source_feed, version=version.version_number)
+        return CustomIndexPoint(timestamp=daily.close_timestamp or datetime.combine(daily.date, time.min, tzinfo=timezone.utc), value=daily.value_close, calculation_quality=daily.min_calculation_quality, estimated=daily.estimated, source_feed=daily.source_feed, version=version.version_number)
     return _point(row, version.version_number)
 
 
@@ -150,7 +150,7 @@ def custom_index_history(start_date: date = Query(...), end_date: date = Query(.
     points = [_point(row, version.version_number) for row in selected.values()]
     detailed_dates = set(selected)
     daily = database.query(CustomIndexDaily).filter(CustomIndexDaily.custom_index_id == index.id, CustomIndexDaily.version_id == version.id, CustomIndexDaily.date >= start_date, CustomIndexDaily.date <= end_date).all()
-    points.extend(CustomIndexPoint(timestamp=datetime.combine(row.date, time.min, tzinfo=timezone.utc), value=row.value_close, calculation_quality=row.min_calculation_quality, estimated=row.estimated, source_feed=row.source_feed, version=version.version_number) for row in daily if row.date not in detailed_dates)
+    points.extend(CustomIndexPoint(timestamp=row.close_timestamp or datetime.combine(row.date, time.min, tzinfo=timezone.utc), value=row.value_close, calculation_quality=row.min_calculation_quality, estimated=row.estimated, source_feed=row.source_feed, version=version.version_number) for row in daily if row.date not in detailed_dates)
     return sorted(points, key=lambda point: point.timestamp)
 
 
@@ -161,5 +161,5 @@ def custom_index_intraday(session_date: date | None = Query(None), _: AdminAccou
     if config is None or selected_date is None or (bounds := session_bounds(selected_date)) is None:
         return []
     index, version, _ = config
-    rows = database.query(CustomIndexHistory).filter(CustomIndexHistory.custom_index_id == index.id, CustomIndexHistory.version_id == version.id, CustomIndexHistory.timestamp >= bounds[0], CustomIndexHistory.timestamp <= bounds[1], CustomIndexHistory.estimated.is_(False)).order_by(CustomIndexHistory.timestamp).all()
+    rows = database.query(CustomIndexHistory).filter(CustomIndexHistory.custom_index_id == index.id, CustomIndexHistory.version_id == version.id, CustomIndexHistory.timestamp >= bounds[0], CustomIndexHistory.timestamp <= bounds[1]).order_by(CustomIndexHistory.timestamp).all()
     return [_point(row, version.version_number) for row in rows]

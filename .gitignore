@@ -11,6 +11,9 @@ htmlcov/
 .venv/
 node_modules/
 dist/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 postgres_data/
 frontend/node_modules/
 .pnpm-store/

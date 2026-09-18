@@ -7,6 +7,7 @@ from app.database.database import Base, SessionLocal, engine
 from app.database.models import CalculationJob, ProviderCredential
 from app.main import app
 from app.scheduler.tasks import run_historical_calculation_task
+from app.services.calculation_service import recover_interrupted_jobs
 
 
 def _token(client: TestClient) -> str:
@@ -44,7 +45,7 @@ def test_job_and_settings_routes_are_protected_and_persist(monkeypatch) -> None:
         assert client.get("/api/settings/system-status", headers=headers).json()["database"] == "OK"
 
 
-def test_worker_task_updates_mocked_job_lifecycle(monkeypatch) -> None:
+def test_scheduler_task_updates_mocked_job_lifecycle(monkeypatch) -> None:
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     database = SessionLocal()
@@ -56,12 +57,30 @@ def test_worker_task_updates_mocked_job_lifecycle(monkeypatch) -> None:
     finally:
         database.close()
     monkeypatch.setattr("app.scheduler.tasks.calculate_svix", lambda *args: [object(), object()])
-    result = run_historical_calculation_task.run(job_id)
+    result = run_historical_calculation_task(job_id)
     assert result["status"] == "COMPLETED"
     database = SessionLocal()
     try:
         saved = database.get(CalculationJob, job_id)
         assert saved.progress == 100
         assert saved.status == "COMPLETED"
+    finally:
+        database.close()
+
+
+def test_running_job_is_requeued_after_api_restart() -> None:
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    database = SessionLocal()
+    try:
+        job = CalculationJob(type="HISTORICAL_SVIX", start_date=date(2025, 1, 1), end_date=date(2025, 1, 2), frequency="daily", status="RUNNING", progress=55)
+        database.add(job)
+        database.commit()
+
+        assert recover_interrupted_jobs(database) == 1
+        database.refresh(job)
+        assert job.status == "PENDING"
+        assert job.progress == 0
+        assert job.started_at is None
     finally:
         database.close()

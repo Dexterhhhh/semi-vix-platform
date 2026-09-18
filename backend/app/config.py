@@ -29,7 +29,6 @@ class Settings(BaseSettings):
     futu_port: int = Field(default=11111, ge=1, le=65535)
     alpaca_base_url: str = "https://data.alpaca.markets"
     alpaca_feed: Literal["indicative", "opra"] = "indicative"
-    redis_url: str = "redis://127.0.0.1:6379/0"
     market_refresh_minutes: int = Field(default=15, ge=5, le=1440)
     svix_calculation_minutes: int = Field(default=15, ge=5, le=1440)
 

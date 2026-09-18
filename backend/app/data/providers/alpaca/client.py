@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 import re
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import httpx
 
@@ -36,7 +36,7 @@ def parse_occ_symbol(symbol: str) -> dict[str, Any]:
 
 
 class AlpacaClient:
-    def __init__(self, api_key: str, secret: str, feed: str = "indicative", base_url: str = "https://data.alpaca.markets"):
+    def __init__(self, api_key: str, secret: str, feed: str = "indicative", base_url: str = "https://data.alpaca.markets", clock: Callable[[], datetime] | None = None):
         normalized_feed = feed.strip().lower()
         if normalized_feed not in {"indicative", "opra"}:
             raise ValueError("Alpaca feed must be indicative or opra")
@@ -47,6 +47,7 @@ class AlpacaClient:
         self._http: httpx.AsyncClient | None = None
         self._option_snapshots: dict[str, dict[str, Any]] = {}
         self._underlying_prices: dict[str, float] = {}
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     async def connect(self) -> None:
         if self._http is None:
@@ -105,8 +106,9 @@ class AlpacaClient:
 
     def _prioritize_chain(self, symbol: str, rows: list[dict[str, Any]], target: date | None) -> list[dict[str, Any]]:
         if target is None and rows:
-            target = datetime.now(timezone.utc).date() + timedelta(days=30)
-            expiries = sorted({row["expiry"].date() for row in rows if row["expiry"].date() > datetime.now(timezone.utc).date()})
+            today = self._clock().astimezone(timezone.utc).date()
+            target = today + timedelta(days=30)
+            expiries = sorted({row["expiry"].date() for row in rows if row["expiry"].date() > today})
             lower = max((item for item in expiries if item <= target), default=None)
             upper = min((item for item in expiries if item >= target), default=None)
             selected = [item for item in (lower, upper) if item is not None]
@@ -128,7 +130,7 @@ class AlpacaClient:
         if target is not None:
             params["expiration_date"] = target.isoformat()
         else:
-            today = datetime.now(timezone.utc).date()
+            today = self._clock().astimezone(timezone.utc).date()
             params["expiration_date_gte"] = (today + timedelta(days=20)).isoformat()
             params["expiration_date_lte"] = (today + timedelta(days=45)).isoformat()
         rows: list[dict[str, Any]] = []

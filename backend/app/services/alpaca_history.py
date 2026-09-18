@@ -98,7 +98,7 @@ class AlpacaHistoricalBackfill:
         raise ProviderUnavailableError("Alpaca historical-data request failed")
 
     async def _stock_bars(self, client: httpx.AsyncClient, symbols: tuple[str, ...], start: date, end: date) -> dict[str, list[dict[str, Any]]]:
-        params: dict[str, Any] = {"symbols": ",".join(symbols), "timeframe": "1Day", "start": _utc_midnight(start), "end": _utc_midnight(end + timedelta(days=1)), "feed": self.stock_feed, "limit": 10000}
+        params: dict[str, Any] = {"symbols": ",".join(symbols), "timeframe": "1Day", "start": _utc_midnight(start), "end": _utc_midnight(end + timedelta(days=1)), "feed": self.stock_feed, "adjustment": "all", "limit": 10000}
         collected: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for _ in range(100):
             payload = await self._get(client, "https://data.alpaca.markets/v2/stocks/bars", params)
@@ -180,7 +180,7 @@ class AlpacaHistoricalBackfill:
                 timestamp = _parse_timestamp(bar["t"])
                 prices[symbol][timestamp.date()] = close
                 if (symbol, timestamp) not in existing:
-                    quotes.append(StockQuote(symbol=symbol, timestamp=timestamp, price=close, volume=int(bar.get("v") or 0), provider="ALPACA", delayed=True))
+                    quotes.append(StockQuote(symbol=symbol, timestamp=timestamp, price=close, volume=int(bar.get("v") or 0), provider="ALPACA", delayed=True, feed=self.stock_feed, price_type="adjusted_close"))
         self.stocks.save_many(quotes)
         return prices
 
@@ -200,7 +200,7 @@ class AlpacaHistoricalBackfill:
                 key = (f"ALPACA:{contract_symbol}", timestamp)
                 if key in existing:
                     continue
-                quotes.append(OptionQuote(contract_id=key[0], symbol=symbol, expiry=contract["expiry"], strike=contract["strike"], option_type=contract["option_type"], timestamp=timestamp, bid=close, ask=close, last=close, volume=int(bar.get("v") or 0), provider="ALPACA", delayed=True))
+                quotes.append(OptionQuote(contract_id=key[0], symbol=symbol, expiry=contract["expiry"], strike=contract["strike"], option_type=contract["option_type"], timestamp=timestamp, bid=close, ask=close, last=close, volume=int(bar.get("v") or 0), provider="ALPACA", delayed=True, feed="historical", price_type="trade_close_proxy"))
         self.options.save_many(quotes)
         return len(quotes)
 

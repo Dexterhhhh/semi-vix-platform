@@ -29,15 +29,15 @@ export function VolatilityChart({ data, metrics }: { data: SVIXPoint[]; metrics:
         { type: 'slider', filterMode: 'none', height: 22, bottom: 18, borderColor: '#334155', backgroundColor: '#0b1728', fillerColor: 'rgba(56,189,248,.18)', handleStyle: { color: '#38bdf8', borderColor: '#7dd3fc' }, textStyle: { color: '#94a3b8' } },
       ],
       series: selected.flatMap((metric) => {
-        const estimated = data.filter((point) => point.estimated)
-        const strict = data.filter((point) => !point.estimated)
+        const estimated = data.map((point) => [point.timestamp, point.estimated ? point[metric.key] : null])
+        const strict = data.map((point) => [point.timestamp, point.estimated ? null : point[metric.key]])
         return [
           {
             name: `${metric.label} · 历史近似`,
             type: 'line',
-            data: estimated.map((point) => [point.timestamp, point[metric.key]]),
+            data: estimated,
             smooth: 0.2,
-            showSymbol: estimated.length === 1,
+            showSymbol: data.filter((point) => point.estimated).length === 1,
             connectNulls: false,
             emphasis: { focus: 'series' },
             lineStyle: { color: metric.color, width: metric.key === 'svix' ? 2 : 1.5, type: 'dashed', opacity: 0.45 },
@@ -46,9 +46,9 @@ export function VolatilityChart({ data, metrics }: { data: SVIXPoint[]; metrics:
           {
             name: `${metric.label} · 严格计算`,
             type: 'line',
-            data: strict.map((point) => [point.timestamp, point[metric.key]]),
+            data: strict,
             smooth: 0.2,
-            showSymbol: strict.length <= 2,
+            showSymbol: data.filter((point) => !point.estimated).length <= 2,
             connectNulls: false,
             emphasis: { focus: 'series' },
             lineStyle: { color: metric.color, width: metric.key === 'svix' ? 3 : 2, type: 'solid', opacity: 1 },

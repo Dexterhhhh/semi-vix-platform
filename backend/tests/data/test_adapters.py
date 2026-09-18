@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -61,7 +61,7 @@ def test_adapters_normalize_mocked_sdk_payloads() -> None:
 def test_unsupported_symbol_and_factory_configuration_fail_predictably() -> None:
     async def check() -> None:
         with pytest.raises(UnsupportedSymbolError):
-            await IBKRProvider(FakeIBKRClient()).get_stock_quote("TSLA")
+            await IBKRProvider(FakeIBKRClient()).get_stock_quote("bad symbol!")
     asyncio.run(check())
     assert isinstance(create_provider("IBKR"), MarketDataProvider)
     assert isinstance(create_provider("FUTU"), MarketDataProvider)
@@ -81,7 +81,7 @@ def test_alpaca_adapter_marks_indicative_quotes_as_delayed(monkeypatch) -> None:
     monkeypatch.setattr(AlpacaClient, "_request", fake_request)
 
     async def check() -> None:
-        provider = AlpacaProvider(AlpacaClient("key", "secret", "indicative"))
+        provider = AlpacaProvider(AlpacaClient("key", "secret", "indicative", clock=lambda: datetime(2026, 7, 10, tzinfo=timezone.utc)))
         await provider.connect()
         assert await provider.health_check()
         stock = await provider.get_stock_quote("NVDA")
@@ -96,7 +96,7 @@ def test_alpaca_adapter_marks_indicative_quotes_as_delayed(monkeypatch) -> None:
     asyncio.run(check())
 
 
-def test_alpaca_adapter_normalizes_modified_crossed_market(monkeypatch) -> None:
+def test_alpaca_adapter_rejects_crossed_market_without_rewriting_it(monkeypatch) -> None:
     async def fake_request(self, path: str, params=None):
         return {"latestTrade": {"p": 100.0}, "latestQuote": {"bp": 101.0, "ap": 99.0}}
 
@@ -105,9 +105,8 @@ def test_alpaca_adapter_normalizes_modified_crossed_market(monkeypatch) -> None:
     async def check() -> None:
         provider = AlpacaProvider(AlpacaClient("key", "secret", "indicative"))
         await provider.connect()
-        quote = await provider.get_stock_quote("AMD")
-        assert quote.bid == 99.0
-        assert quote.ask == 101.0
+        with pytest.raises(ValueError, match="bid cannot exceed ask"):
+            await provider.get_stock_quote("AMD")
         await provider.disconnect()
 
     asyncio.run(check())

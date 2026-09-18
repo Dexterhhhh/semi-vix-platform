@@ -104,9 +104,13 @@ def lifecycle_status(_: AdminAccount = Depends(get_current_admin), database: Ses
 
 
 @router.post("/data-lifecycle/run", status_code=202)
-def run_lifecycle_now(_: AdminAccount = Depends(get_current_admin)) -> dict[str, str]:
-    from app.scheduler.tasks import data_lifecycle_maintenance_task
-    data_lifecycle_maintenance_task.delay(True)
+def run_lifecycle_now(_: AdminAccount = Depends(get_current_admin), database: Session = Depends(get_db)) -> dict[str, str]:
+    requested = database.query(SystemSettings).filter_by(key="maintenance_requested").first()
+    if requested is None:
+        database.add(SystemSettings(key="maintenance_requested", value="true"))
+    else:
+        requested.value = "true"
+    database.commit()
     return {"status": "queued"}
 
 
@@ -118,4 +122,4 @@ def system_status(_: AdminAccount = Depends(get_current_admin), database: Sessio
     latest_daily = database.query(SVIXDaily).order_by(SVIXDaily.date.desc()).first()
     recent_job = database.query(CalculationJob).order_by(CalculationJob.created_at.desc()).first()
     last_calculation = latest.timestamp if latest else latest_daily.date if latest_daily else None
-    return {"database": "OK", "market_data": "Configured" if credential else "Not configured", "svix_engine": "Ready", "worker": "Queued" if recent_job and recent_job.status in {"PENDING", "RUNNING"} else "Idle", "last_calculation": last_calculation}
+    return {"database": "OK", "market_data": "Configured" if credential else "Not configured", "svix_engine": "Go", "worker": "Queued" if recent_job and recent_job.status in {"PENDING", "RUNNING"} else "Go scheduler idle", "last_calculation": last_calculation}

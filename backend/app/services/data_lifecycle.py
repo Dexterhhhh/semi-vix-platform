@@ -40,17 +40,36 @@ def _upsert_daily(database: Session, calculation_date: date, rows: list[SVIXHist
     if record is None:
         record = SVIXDaily(date=calculation_date)
         database.add(record)
-    record.svix_open = ordered[0].svix
-    record.svix_high = max(row.svix for row in ordered)
-    record.svix_low = min(row.svix for row in ordered)
-    record.svix_close = ordered[-1].svix
-    record.core_close = ordered[-1].core_vol
-    record.memory_close = ordered[-1].memory_vol
-    record.ai_close = ordered[-1].ai_vol
-    record.sample_count = len(ordered)
-    record.min_calculation_quality = min(row.calculation_quality for row in ordered)
-    record.estimated = ordered[-1].estimated
-    record.source_feed = ordered[-1].source_feed
+        record.svix_open = ordered[0].svix
+        record.svix_high = max(row.svix for row in ordered)
+        record.svix_low = min(row.svix for row in ordered)
+        record.svix_close = ordered[-1].svix
+        record.core_close = ordered[-1].core_vol
+        record.memory_close = ordered[-1].memory_vol
+        record.ai_close = ordered[-1].ai_vol
+        record.sample_count = len(ordered)
+        record.min_calculation_quality = min(row.calculation_quality for row in ordered)
+        record.estimated = ordered[-1].estimated
+        record.source_feed = ordered[-1].source_feed
+        record.open_timestamp = ordered[0].timestamp
+        record.close_timestamp = ordered[-1].timestamp
+        return
+    record.svix_high = max(record.svix_high, *(row.svix for row in ordered))
+    record.svix_low = min(record.svix_low, *(row.svix for row in ordered))
+    record.sample_count += len(ordered)
+    record.min_calculation_quality = min(record.min_calculation_quality, *(row.calculation_quality for row in ordered))
+    if record.open_timestamp is None or ordered[0].timestamp < record.open_timestamp:
+        record.svix_open = ordered[0].svix
+        record.open_timestamp = ordered[0].timestamp
+    if record.close_timestamp is None or ordered[-1].timestamp > record.close_timestamp:
+        latest = ordered[-1]
+        record.svix_close = latest.svix
+        record.core_close = latest.core_vol
+        record.memory_close = latest.memory_vol
+        record.ai_close = latest.ai_vol
+        record.estimated = latest.estimated
+        record.source_feed = latest.source_feed
+        record.close_timestamp = latest.timestamp
 
 
 def _upsert_custom_daily(database: Session, custom_index_id: int, version_id: int, calculation_date: date, rows: list[CustomIndexHistory]) -> None:
@@ -59,14 +78,30 @@ def _upsert_custom_daily(database: Session, custom_index_id: int, version_id: in
     if record is None:
         record = CustomIndexDaily(custom_index_id=custom_index_id, version_id=version_id, date=calculation_date)
         database.add(record)
-    record.value_open = ordered[0].value
-    record.value_high = max(row.value for row in ordered)
-    record.value_low = min(row.value for row in ordered)
-    record.value_close = ordered[-1].value
-    record.sample_count = len(ordered)
-    record.min_calculation_quality = min(row.calculation_quality for row in ordered)
-    record.estimated = ordered[-1].estimated
-    record.source_feed = ordered[-1].source_feed
+        record.value_open = ordered[0].value
+        record.value_high = max(row.value for row in ordered)
+        record.value_low = min(row.value for row in ordered)
+        record.value_close = ordered[-1].value
+        record.sample_count = len(ordered)
+        record.min_calculation_quality = min(row.calculation_quality for row in ordered)
+        record.estimated = ordered[-1].estimated
+        record.source_feed = ordered[-1].source_feed
+        record.open_timestamp = ordered[0].timestamp
+        record.close_timestamp = ordered[-1].timestamp
+        return
+    record.value_high = max(record.value_high, *(row.value for row in ordered))
+    record.value_low = min(record.value_low, *(row.value for row in ordered))
+    record.sample_count += len(ordered)
+    record.min_calculation_quality = min(record.min_calculation_quality, *(row.calculation_quality for row in ordered))
+    if record.open_timestamp is None or ordered[0].timestamp < record.open_timestamp:
+        record.value_open = ordered[0].value
+        record.open_timestamp = ordered[0].timestamp
+    if record.close_timestamp is None or ordered[-1].timestamp > record.close_timestamp:
+        latest = ordered[-1]
+        record.value_close = latest.value
+        record.estimated = latest.estimated
+        record.source_feed = latest.source_feed
+        record.close_timestamp = latest.timestamp
 
 
 def _delete_ids_in_batches(database: Session, model, ids: list[int], batch_size: int) -> int:
@@ -119,14 +154,32 @@ def run_data_maintenance(database: Session, *, now: datetime | None = None, forc
 
         if bool(policy["option_cleanup_enabled"]):
             option_cutoff = now - timedelta(days=int(policy["option_retention_days"]))
-            covered_dates = {timestamp.date() for (timestamp,) in database.query(SVIXHistory.timestamp).all()}
-            covered_dates.update(value for (value,) in database.query(SVIXDaily.date).all())
-            for calculation_date in covered_dates:
+            covered_inputs = {
+                (timestamp.date(), source.split(":", 1)[0].upper())
+                for timestamp, source in database.query(SVIXHistory.timestamp, SVIXHistory.source_feed).all()
+                if source and ":" in source
+            }
+            covered_inputs.update(
+                (value, source.split(":", 1)[0].upper())
+                for value, source in database.query(SVIXDaily.date, SVIXDaily.source_feed).all()
+                if source and ":" in source
+            )
+            covered_inputs.update(
+                (timestamp.date(), source.split(":", 1)[0].upper())
+                for timestamp, source in database.query(CustomIndexHistory.timestamp, CustomIndexHistory.source_feed).all()
+                if source and ":" in source
+            )
+            covered_inputs.update(
+                (value, source.split(":", 1)[0].upper())
+                for value, source in database.query(CustomIndexDaily.date, CustomIndexDaily.source_feed).all()
+                if source and ":" in source
+            )
+            for calculation_date, provider in covered_inputs:
                 start, end = _day_bounds(calculation_date)
                 if end >= option_cutoff:
                     continue
                 while True:
-                    batch = [row_id for (row_id,) in database.query(OptionSnapshot.id).filter(OptionSnapshot.timestamp >= start, OptionSnapshot.timestamp <= end).limit(batch_size).all()]
+                    batch = [row_id for (row_id,) in database.query(OptionSnapshot.id).filter(OptionSnapshot.provider == provider, OptionSnapshot.timestamp >= start, OptionSnapshot.timestamp <= end).limit(batch_size).all()]
                     if not batch:
                         break
                     option_deleted += database.query(OptionSnapshot).filter(OptionSnapshot.id.in_(batch)).delete(synchronize_session=False)
