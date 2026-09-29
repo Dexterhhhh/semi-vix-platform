@@ -5,15 +5,15 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import json
 import logging
+import random
 import time
-
-from sqlalchemy import func
 
 from app.database.database import SessionLocal
 from app.database.models import CalculationJob, MarketCollectionRun, OptionSnapshot, ProviderCredential, SystemSettings
 from app.scheduler.market_hours import market_status
 from app.services.market_refresh import refresh_market_data
 from app.services.svix_calculator import calculate_svix
+from app.services.svix_observation import calculate_observation
 from app.services.data_lifecycle import run_data_maintenance
 from app.services.alpaca_history import backfill_alpaca_history
 from app.svix.universe import DEFAULT_UNIVERSE
@@ -63,12 +63,11 @@ def collect_market_data_task() -> dict[str, object]:
     run: MarketCollectionRun | None = None
     try:
         interval_record = database.query(SystemSettings).filter_by(key="intraday_refresh_seconds").first()
-        legacy_interval = database.query(SystemSettings).filter_by(key="refresh_frequency_minutes").first()
         try:
-            interval_seconds = int(json.loads(interval_record.value)) if interval_record else (int(json.loads(legacy_interval.value)) * 60 if legacy_interval else 900)
+            interval_seconds = int(json.loads(interval_record.value)) if interval_record else 60
         except (TypeError, ValueError):
-            interval_seconds = 900
-        interval_seconds = min(3600, max(30, interval_seconds))
+            interval_seconds = 60
+        interval_seconds = min(3600, max(60, interval_seconds))
         interval_minutes = max(1, (interval_seconds + 59) // 60)
         latest = database.query(MarketCollectionRun).filter_by(session_date=market.session_date).order_by(MarketCollectionRun.started_at.desc()).first()
         if latest and latest.status == "RUNNING" and latest.started_at >= now - timedelta(seconds=max(1800, interval_seconds * 2)):
@@ -76,8 +75,18 @@ def collect_market_data_task() -> dict[str, object]:
         if latest and latest.status == "RUNNING":
             latest.status, latest.finished_at, latest.error_message = "FAILED", now, "stale collection run"
             database.commit()
-        if latest and latest.status == "COMPLETED" and latest.started_at > now - timedelta(seconds=interval_seconds):
-            return {"status": "SKIPPED", "reason": "interval_not_due", "next_due": (latest.started_at + timedelta(seconds=interval_seconds)).isoformat(), "market": market.to_dict()}
+        if latest:
+            delay = interval_seconds
+            if latest.status in {"FAILED", "NO_VALID_DATA"}:
+                recent = database.query(MarketCollectionRun).filter_by(session_date=market.session_date).order_by(MarketCollectionRun.started_at.desc()).limit(4).all()
+                failures = next((index for index, item in enumerate(recent) if item.status not in {"FAILED", "NO_VALID_DATA"}), len(recent))
+                delay = max(interval_seconds, min(300, 60 * 2 ** max(0, failures - 1)))
+                delay += random.uniform(0, min(5, delay * 0.05))
+            next_due = latest.started_at + timedelta(seconds=delay)
+            if latest.retry_after_seconds and latest.finished_at:
+                next_due = max(next_due, latest.finished_at + timedelta(seconds=latest.retry_after_seconds))
+            if next_due > now:
+                return {"status": "SKIPPED", "reason": "interval_not_due", "next_due": next_due.isoformat(), "market": market.to_dict()}
         run = MarketCollectionRun(session_date=market.session_date, status="RUNNING", interval_minutes=interval_minutes, interval_seconds=interval_seconds, started_at=now)
         database.add(run)
         database.commit()
@@ -85,7 +94,7 @@ def collect_market_data_task() -> dict[str, object]:
         run = database.get(MarketCollectionRun, run.id)
         if int(summary.get("option_quotes_saved", 0)) == 0:
             run.status = "NO_VALID_DATA"
-        elif int(summary.get("symbols_failed", 0)) > 0:
+        elif int(summary.get("symbols_failed", 0)) > 0 or summary.get("errors"):
             run.status = "PARTIAL"
         else:
             run.status = "COMPLETED"
@@ -94,9 +103,22 @@ def collect_market_data_task() -> dict[str, object]:
         run.option_quotes_saved = int(summary.get("option_quotes_saved", 0))
         run.symbols_succeeded = int(summary.get("symbols_succeeded", 0))
         run.symbols_failed = int(summary.get("symbols_failed", 0))
+        run.batch_id = summary.get("batch_id")
+        run.symbol_status = json.dumps(summary.get("symbol_status", {}))
+        run.collection_errors = json.dumps(summary.get("errors", []))
+        run.retry_after_seconds = summary.get("retry_after_seconds")
+        run.calculation_status = "PENDING" if run.option_quotes_saved else "NO_VALID_DATA"
         database.commit()
         if run.option_quotes_saved > 0:
-            calculate_latest_svix_task()
+            try:
+                calculate_latest_svix_task(run.batch_id)
+            except Exception as exc:
+                database.rollback()
+                failed = database.get(MarketCollectionRun, run.id)
+                failed.calculation_status = "FAILED"
+                failed.error_message = f"calculation: {type(exc).__name__}"
+                database.commit()
+                logger.exception("Observation calculation failed for batch %s", run.batch_id)
         _log("collect_market_data", "success", started, summary=summary)
         return {**summary, "status": run.status, "market": market.to_dict(), "interval_seconds": interval_seconds}
     except Exception as exc:
@@ -166,26 +188,17 @@ def run_historical_calculation_task(job_id: int) -> dict[str, object]:
         database.close()
 
 
-def calculate_latest_svix_task() -> dict[str, object]:
-    """Strict calculation from the latest collected two-sided option snapshot."""
+def calculate_latest_svix_task(batch_id: str | None = None) -> dict[str, object]:
+    """Calculate the latest completed collection batch in free observation mode."""
     database = SessionLocal()
     try:
-        configured = database.query(ProviderCredential).filter_by(enabled=True).first()
-        provider = configured.provider if configured else None
-        latest_query = database.query(func.max(OptionSnapshot.timestamp))
-        if provider:
-            latest_query = latest_query.filter(OptionSnapshot.provider == provider)
-        latest_timestamp = latest_query.scalar()
-        if latest_timestamp is None:
-            return {"records_calculated": 0, "reason": "no_option_snapshot"}
-        calculation_date = latest_timestamp.date()
-        strict = not (
-            configured
-            and configured.provider == "ALPACA"
-            and (configured.data_feed or "indicative").lower() == "indicative"
-        )
-        results = calculate_svix(database, calculation_date, calculation_date, "daily", strict=strict)
-        return {"records_calculated": len(results), "calculation_date": calculation_date.isoformat(), "method": "strict" if strict else "indicative_estimate"}
+        if batch_id is None:
+            latest = database.query(MarketCollectionRun).filter(MarketCollectionRun.batch_id.is_not(None)).order_by(MarketCollectionRun.started_at.desc()).first()
+            batch_id = latest.batch_id if latest else None
+        if batch_id is None:
+            return {"records_calculated": 0, "reason": "no_collection_batch"}
+        result = calculate_observation(database, batch_id)
+        return {"records_calculated": int(result is not None), "batch_id": batch_id, "method": "semivix-observe-v1"}
     finally:
         database.close()
 

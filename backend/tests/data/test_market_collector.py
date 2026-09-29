@@ -39,13 +39,13 @@ def test_collector_commits_available_symbols_when_one_symbol_fails() -> None:
     database = SessionLocal()
     try:
         summary = asyncio.run(collect_option_snapshot(("NVDA", "SKHY", "AMD"), database, provider=PartiallyAvailableProvider()))
-        assert summary["symbols_succeeded"] == 2
-        assert summary["symbols_failed"] == 1
+        assert summary["symbols_succeeded"] == 3
+        assert summary["symbols_failed"] == 0
         assert summary["stock_quotes_saved"] == 2
-        assert summary["option_quotes_saved"] == 2
+        assert summary["option_quotes_saved"] == 3
         assert summary["errors"][0]["symbol"] == "SKHY"
         assert database.query(StockSnapshot).count() == 2
-        assert database.query(OptionSnapshot).count() == 2
+        assert database.query(OptionSnapshot).count() == 3
     finally:
         database.close()
 

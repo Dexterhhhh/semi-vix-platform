@@ -1,6 +1,9 @@
 import asyncio
 from datetime import date
+import httpx
+import pytest
 
+from app.data.exceptions import ProviderRateLimitError
 from app.data.providers.alpaca.client import AlpacaClient, parse_occ_symbol
 
 
@@ -31,5 +34,20 @@ def test_chain_pagination_is_cached_for_quote_calls(monkeypatch) -> None:
         assert quote["bid"] == 1.0
         assert len(calls) == 2
         assert calls[1][1]["page_token"] == "next"
+
+    asyncio.run(check())
+
+
+def test_retry_after_is_preserved_for_rate_limit() -> None:
+    class RateLimitedHTTP:
+        async def get(self, path, params=None):
+            return httpx.Response(429, headers={"Retry-After": "120"}, request=httpx.Request("GET", "https://data.alpaca.markets" + path))
+
+    async def check() -> None:
+        client = AlpacaClient("key", "secret")
+        client._http = RateLimitedHTTP()
+        with pytest.raises(ProviderRateLimitError) as error:
+            await client._request("/v2/stocks/SPY/snapshot")
+        assert error.value.retry_after_seconds == 120
 
     asyncio.run(check())

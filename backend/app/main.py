@@ -43,7 +43,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Semi-VIX Platform", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Semi-VIX Platform", version="1.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=get_settings().allowed_origins, allow_credentials=True, allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
 app.include_router(health_router)
 app.include_router(auth_router)

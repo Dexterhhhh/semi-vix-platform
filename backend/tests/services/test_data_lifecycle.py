@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
+import json
 
 from app.database.database import Base, SessionLocal, engine
-from app.database.models import DataMaintenanceRun, OptionSnapshot, SVIXDaily, SVIXHistory
+from app.database.models import DataMaintenanceRun, OptionSnapshot, SVIXDaily, SVIXHistory, SystemSettings
 from app.services.data_lifecycle import run_data_maintenance
 
 
@@ -14,8 +15,8 @@ def test_maintenance_downsamples_then_deletes_only_covered_old_options() -> None
     Base.metadata.create_all(engine)
     database = SessionLocal()
     now = datetime(2026, 7, 12, 4, 0, tzinfo=timezone.utc)
-    old = now - timedelta(days=10)
-    uncovered = now - timedelta(days=12)
+    old = now - timedelta(days=20)
+    uncovered = now - timedelta(days=22)
     recent = now - timedelta(days=1)
     try:
         database.add_all([
@@ -24,6 +25,8 @@ def test_maintenance_downsamples_then_deletes_only_covered_old_options() -> None
             _option(old, "other-provider", "FUTU"),
             _option(uncovered, "uncovered"),
             _option(recent, "recent"),
+            SystemSettings(key="option_cleanup_enabled", value=json.dumps(True)),
+            SystemSettings(key="option_archive_through", value=json.dumps(old.date().isoformat())),
         ])
         database.commit()
         result = run_data_maintenance(database, now=now, force=True, batch_size=1)
@@ -35,6 +38,23 @@ def test_maintenance_downsamples_then_deletes_only_covered_old_options() -> None
         assert database.query(DataMaintenanceRun).one().status == "COMPLETED"
     finally:
         database.close()
+
+
+def test_maintenance_keeps_raw_quotes_without_archive_watermark() -> None:
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with SessionLocal() as database:
+        now = datetime(2026, 7, 12, 4, 0, tzinfo=timezone.utc)
+        old = now - timedelta(days=20)
+        database.add_all([
+            SVIXHistory(timestamp=old, svix=30, core_vol=29, memory_vol=35, ai_vol=31, calculation_quality=.9, source_feed="ibkr:smart"),
+            _option(old, "covered-but-unarchived"),
+            SystemSettings(key="option_cleanup_enabled", value=json.dumps(True)),
+        ])
+        database.commit()
+        result = run_data_maintenance(database, now=now, force=True)
+        assert result["option_rows_deleted"] == 0
+        assert database.query(OptionSnapshot).count() == 1
 
 
 def test_downsampling_merges_late_rows_without_overwriting_existing_ohlc() -> None:

@@ -15,6 +15,7 @@ from app.database.database import get_db
 from app.database.models import AdminAccount, AuditEvent, CustomIndex, CustomIndexComponent, CustomIndexDaily, CustomIndexHistory, CustomIndexVersion
 from app.scheduler.market_hours import market_status, session_bounds
 from app.services.custom_index import latest_definition, next_version_number
+from app.services.symbol_directory import ListedSymbol, SymbolDirectoryUnavailable, lookup_symbol
 
 router = APIRouter(prefix="/api/custom-index", tags=["custom-index"])
 SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9.-]{0,15}$")
@@ -66,6 +67,29 @@ class CustomIndexPoint(BaseModel):
     version: int
 
 
+class SymbolLookupResponse(BaseModel):
+    symbol: str
+    name: str
+
+
+async def _listed_symbol(symbol: str) -> ListedSymbol:
+    try:
+        listed = await lookup_symbol(symbol)
+    except SymbolDirectoryUnavailable as exc:
+        raise HTTPException(503, "标的目录暂时不可用，请稍后重试") from exc
+    if listed is None:
+        raise HTTPException(404, f"未找到标的代码 {symbol}")
+    return listed
+
+
+@router.get("/symbols/{symbol}", response_model=SymbolLookupResponse)
+async def get_symbol_name(symbol: str, _: AdminAccount = Depends(get_current_admin)):
+    normalized = symbol.strip().upper()
+    if not SYMBOL_PATTERN.fullmatch(normalized):
+        raise HTTPException(422, "标的代码格式无效")
+    return await _listed_symbol(normalized)
+
+
 def _config(database: Session) -> tuple[CustomIndex, CustomIndexVersion, list[CustomIndexComponent]] | None:
     index = database.query(CustomIndex).order_by(CustomIndex.id).first()
     if index is None:
@@ -88,7 +112,14 @@ def get_custom_index(_: AdminAccount = Depends(get_current_admin), database: Ses
 
 
 @router.put("", response_model=CustomIndexConfigResponse)
-def save_custom_index(payload: CustomIndexPayload, admin: AdminAccount = Depends(get_current_admin), database: Session = Depends(get_db)):
+async def save_custom_index(payload: CustomIndexPayload, admin: AdminAccount = Depends(get_current_admin), database: Session = Depends(get_db)):
+    for component in payload.components:
+        try:
+            await _listed_symbol(component.symbol)
+        except HTTPException as exc:
+            if exc.status_code == 404:
+                raise HTTPException(422, exc.detail) from exc
+            raise
     existing = _config(database)
     if existing is None:
         index = CustomIndex(name=payload.name, enabled=payload.enabled, missing_policy=payload.missing_policy)

@@ -102,6 +102,7 @@ class OptionSnapshot(Base):
     price_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
     received_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
     batch_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    trade_timestamp: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
 
 
 class StockSnapshot(Base):
@@ -123,6 +124,7 @@ class StockSnapshot(Base):
     price_type: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
     received_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
     batch_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    trade_timestamp: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
 
 
 class SVIXHistory(Base):
@@ -176,7 +178,7 @@ class DataMaintenanceRun(Base):
 
 class MarketCollectionRun(Base):
     __tablename__ = "market_collection_runs"
-    __table_args__ = (Index("ix_market_collection_session_started", "session_date", "started_at"),)
+    __table_args__ = (Index("ix_market_collection_session_started", "session_date", "started_at"), UniqueConstraint("batch_id", name="uq_market_collection_batch"))
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     session_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
@@ -189,6 +191,61 @@ class MarketCollectionRun(Base):
     started_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utcnow)
     finished_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    batch_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    calculation_status: Mapped[Optional[str]] = mapped_column(String(24), nullable=True)
+    symbol_status: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    collection_errors: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    retry_after_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+
+class SVIXObservation(Base):
+    __tablename__ = "svix_observations"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "method_version", name="uq_svix_observation_batch_method"),
+        Index("ix_svix_observation_session_time", "session_date", "valuation_at"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_date: Mapped[date] = mapped_column(Date, nullable=False)
+    valuation_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    batch_id: Mapped[str] = mapped_column(ForeignKey("market_collection_runs.batch_id"), nullable=False)
+    method_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    svix: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    core: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    memory: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ai: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    coverage: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    cached_coverage: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    source_feed: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    details: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class SVIXAssetObservation(Base):
+    __tablename__ = "svix_asset_observations"
+    __table_args__ = (UniqueConstraint("batch_id", "method_version", "symbol", name="uq_svix_asset_batch_method_symbol"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    valuation_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    batch_id: Mapped[str] = mapped_column(ForeignKey("market_collection_runs.batch_id"), nullable=False, index=True)
+    method_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False)
+    volatility: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    oldest_input_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
+    newest_input_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime(), nullable=True)
+    term_method: Mapped[Optional[str]] = mapped_column(String(24), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    details: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class SVIXCorrelationCache(Base):
+    __tablename__ = "svix_correlation_cache"
+    __table_args__ = (UniqueConstraint("provider", "as_of", "assets", "available_at", name="uq_svix_corr_day_assets_time"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    as_of: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    available_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    assets: Mapped[str] = mapped_column(String(256), nullable=False)
+    matrix: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class CalculationJob(Base):

@@ -37,7 +37,7 @@ def _snapshot_to_quote(snapshot: OptionSnapshot) -> OptionQuote:
     # stable post-close UTC timestamp without rewriting existing rows.
     if snapshot.provider == "ALPACA":
         expiry = datetime.combine(expiry.date(), time(21, 0), tzinfo=timezone.utc)
-    return OptionQuote(contract_id=snapshot.contract_id, symbol=snapshot.symbol, expiry=expiry, strike=snapshot.strike, option_type=snapshot.option_type, timestamp=snapshot.timestamp, bid=snapshot.bid, ask=snapshot.ask, last=snapshot.last, volume=snapshot.volume, open_interest=snapshot.open_interest, implied_volatility=snapshot.implied_volatility, provider=snapshot.provider, delayed=snapshot.delayed, feed=snapshot.feed, price_type=snapshot.price_type, received_at=snapshot.received_at, batch_id=snapshot.batch_id)
+    return OptionQuote(contract_id=snapshot.contract_id, symbol=snapshot.symbol, expiry=expiry, strike=snapshot.strike, option_type=snapshot.option_type, timestamp=snapshot.timestamp, bid=snapshot.bid, ask=snapshot.ask, last=snapshot.last, volume=snapshot.volume, open_interest=snapshot.open_interest, implied_volatility=snapshot.implied_volatility, provider=snapshot.provider, delayed=snapshot.delayed, feed=snapshot.feed, price_type=snapshot.price_type, received_at=snapshot.received_at, batch_id=snapshot.batch_id, trade_timestamp=snapshot.trade_timestamp)
 
 
 def _aligned_returns(

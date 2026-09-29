@@ -13,6 +13,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.data.factory import create_provider
+from app.data.exceptions import ProviderPermissionError, ProviderRateLimitError
 from app.data.credentials import decrypt_credential
 from app.data.provider import MarketDataProvider
 from app.data.storage.option_repository import OptionRepository
@@ -22,6 +23,10 @@ from app.database.models import ProviderCredential
 
 logger = logging.getLogger(__name__)
 DEFAULT_SYMBOLS = DEFAULT_UNIVERSE
+
+
+def _safe_error(exc: Exception) -> str:
+    return str(exc)[:250] if isinstance(exc, ValueError) else type(exc).__name__
 
 
 def _select_contracts(contracts, reference_price: float | None, limit: int):
@@ -66,12 +71,15 @@ class CollectionSummary:
     provider: str
     started_at: datetime
     symbols_requested: int
+    batch_id: str
     finished_at: datetime | None = None
     symbols_succeeded: int = 0
     symbols_failed: int = 0
     stock_quotes_saved: int = 0
     option_quotes_saved: int = 0
     errors: list[CollectionError] = field(default_factory=list)
+    symbol_status: dict[str, dict[str, str]] = field(default_factory=dict)
+    retry_after_seconds: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -101,46 +109,71 @@ async def collect_option_snapshot(symbols: Iterable[str], database: Session, pro
         secret=decrypt_credential(configured.secret_encrypted) if configured and configured.secret_encrypted else None,
         data_feed=configured.data_feed if configured else None,
     )
-    summary = CollectionSummary(provider=market_provider.provider_name, started_at=datetime.now(timezone.utc), symbols_requested=len(requested))
     batch_id = str(uuid4())
+    summary = CollectionSummary(provider=market_provider.provider_name, started_at=datetime.now(timezone.utc), symbols_requested=len(requested), batch_id=batch_id)
     stock_repository = QuoteRepository(database)
     option_repository = OptionRepository(database)
     try:
         await _bounded(market_provider.connect(), request_timeout_seconds)
         for symbol in requested:
+            symbol = symbol.upper()
+            stock_quote = None
             try:
                 with database.begin_nested():
                     stock_quote = await _bounded(market_provider.get_stock_quote(symbol), request_timeout_seconds)
                     stock_repository.save(stock_quote.model_copy(update={"batch_id": batch_id, "received_at": datetime.now(timezone.utc)}))
                     summary.stock_quotes_saved += 1
-
+                summary.symbol_status[symbol] = {"stock": "SAVED", "options": "PENDING"}
+            except Exception as exc:
+                logger.warning("Stock quote unavailable for %s: %s", symbol, exc)
+                summary.errors.append(CollectionError(symbol=symbol, code="STOCK_QUOTE_UNAVAILABLE", message=_safe_error(exc)))
+                summary.symbol_status[symbol] = {"stock": "FAILED", "options": "PENDING"}
+                if isinstance(exc, (ProviderPermissionError, ProviderRateLimitError)):
+                    summary.symbols_failed += 1
+                    summary.symbol_status[symbol]["options"] = "SKIPPED"
+                    summary.retry_after_seconds = exc.retry_after_seconds if isinstance(exc, ProviderRateLimitError) else 300
+                    break
+            try:
+                with database.begin_nested():
                     contracts = await _bounded(market_provider.get_option_chain(symbol), request_timeout_seconds)
                     if not contracts:
-                        summary.errors.append(CollectionError(symbol=symbol.upper(), code="OPTION_CHAIN_UNAVAILABLE", message="No eligible contracts returned"))
+                        summary.errors.append(CollectionError(symbol=symbol, code="OPTION_CHAIN_UNAVAILABLE", message="No eligible contracts returned"))
                         summary.symbols_failed += 1
+                        summary.symbol_status[symbol]["options"] = "NO_CHAIN"
                         continue
-
                     quotes = []
-                    selected_contracts = _select_contracts(contracts, stock_quote.price, max_contracts_per_symbol)
+                    selected_contracts = _select_contracts(contracts, stock_quote.price if stock_quote else None, max_contracts_per_symbol)
                     for contract in selected_contracts:
                         try:
                             quote = await _bounded(market_provider.get_option_quote(contract), request_timeout_seconds)
                             quotes.append(quote.model_copy(update={"batch_id": batch_id, "received_at": datetime.now(timezone.utc)}))
                         except asyncio.TimeoutError:
-                            summary.errors.append(CollectionError(symbol=symbol.upper(), code="QUOTE_TIMEOUT", message="Option quote request timed out"))
+                            summary.errors.append(CollectionError(symbol=symbol, code="QUOTE_TIMEOUT", message="Option quote request timed out"))
                         except Exception as exc:
-                            logger.warning("Option quote unavailable for %s: %s", symbol.upper(), exc)
-                            summary.errors.append(CollectionError(symbol=symbol.upper(), code="OPTION_QUOTE_UNAVAILABLE", message="Option quote unavailable"))
+                            if isinstance(exc, (ProviderPermissionError, ProviderRateLimitError)):
+                                raise
+                            logger.warning("Option quote unavailable for %s: %s", symbol, exc)
+                            summary.errors.append(CollectionError(symbol=symbol, code="OPTION_QUOTE_UNAVAILABLE", message=_safe_error(exc)))
                     option_repository.save_many(quotes)
                     summary.option_quotes_saved += len(quotes)
-                    summary.symbols_succeeded += 1
+                    if quotes:
+                        summary.symbols_succeeded += 1
+                        summary.symbol_status[symbol]["options"] = "SAVED"
+                    else:
+                        summary.symbols_failed += 1
+                        summary.symbol_status[symbol]["options"] = "NO_QUOTES"
             except asyncio.TimeoutError:
                 summary.symbols_failed += 1
-                summary.errors.append(CollectionError(symbol=symbol.upper(), code="REQUEST_TIMEOUT", message="Market-data request timed out"))
+                summary.errors.append(CollectionError(symbol=symbol, code="REQUEST_TIMEOUT", message="Option chain request timed out"))
+                summary.symbol_status[symbol]["options"] = "TIMEOUT"
             except Exception as exc:
                 summary.symbols_failed += 1
-                logger.warning("Market-data collection unavailable for %s: %s", symbol.upper(), exc)
-                summary.errors.append(CollectionError(symbol=symbol.upper(), code="COLLECTION_UNAVAILABLE", message="Market data unavailable"))
+                logger.warning("Option collection unavailable for %s: %s", symbol, exc)
+                summary.errors.append(CollectionError(symbol=symbol, code="OPTION_COLLECTION_UNAVAILABLE", message=_safe_error(exc)))
+                summary.symbol_status[symbol]["options"] = "FAILED"
+                if isinstance(exc, (ProviderPermissionError, ProviderRateLimitError)):
+                    summary.retry_after_seconds = exc.retry_after_seconds if isinstance(exc, ProviderRateLimitError) else 300
+                    break
         database.commit()
     except Exception:
         database.rollback()

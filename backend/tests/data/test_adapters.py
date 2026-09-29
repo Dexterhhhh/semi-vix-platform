@@ -98,15 +98,34 @@ def test_alpaca_adapter_marks_indicative_quotes_as_delayed(monkeypatch) -> None:
 
 def test_alpaca_adapter_rejects_crossed_market_without_rewriting_it(monkeypatch) -> None:
     async def fake_request(self, path: str, params=None):
-        return {"latestTrade": {"p": 100.0}, "latestQuote": {"bp": 101.0, "ap": 99.0}}
+        return {"latestTrade": {"p": 100.0, "t": "2026-07-10T15:30:00Z"}, "latestQuote": {"bp": 101.0, "ap": 99.0, "t": "2026-07-10T15:30:01Z"}}
 
     monkeypatch.setattr(AlpacaClient, "_request", fake_request)
 
     async def check() -> None:
-        provider = AlpacaProvider(AlpacaClient("key", "secret", "indicative"))
+        provider = AlpacaProvider(AlpacaClient("key", "secret", "indicative", clock=lambda: datetime(2026, 7, 10, tzinfo=timezone.utc)))
         await provider.connect()
-        with pytest.raises(ValueError, match="bid cannot exceed ask"):
-            await provider.get_stock_quote("AMD")
+        quote = await provider.get_stock_quote("AMD")
+        assert quote.price == 100.0
+        assert quote.trade_timestamp is not None
+        assert quote.bid is None and quote.ask is None
+        await provider.disconnect()
+
+    asyncio.run(check())
+
+
+def test_alpaca_option_requires_real_timezone_aware_quote_timestamp(monkeypatch) -> None:
+    async def fake_request(self, path: str, params=None):
+        return {"snapshots": {"NVDA260821C00100000": {"latestQuote": {"bp": 3.0, "ap": 3.2, "t": "2026-07-10T15:30:00"}, "latestTrade": {"p": 3.1, "t": "2026-07-10T15:30:00Z"}}}}
+
+    monkeypatch.setattr(AlpacaClient, "_request", fake_request)
+
+    async def check() -> None:
+        provider = AlpacaProvider(AlpacaClient("key", "secret", "indicative", clock=lambda: datetime(2026, 7, 10, tzinfo=timezone.utc)))
+        await provider.connect()
+        contract = (await provider.get_option_chain("NVDA"))[0]
+        with pytest.raises(ValueError, match="Market timestamp"):
+            await provider.get_option_quote(contract)
         await provider.disconnect()
 
     asyncio.run(check())

@@ -50,6 +50,12 @@ class StockQuote(_MarketDataModel):
     price_type: Literal["bbo", "trade", "adjusted_close", "raw_close", "unknown"] = "unknown"
     received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     batch_id: Optional[str] = None
+    trade_timestamp: Optional[datetime] = None
+
+    @field_validator("trade_timestamp", mode="after")
+    @classmethod
+    def validate_trade_timestamp(cls, value: Optional[datetime]) -> Optional[datetime]:
+        return None if value is None else cls.require_aware_timestamp(value)
 
     @field_validator("price", "bid", "ask", mode="after")
     @classmethod
@@ -125,6 +131,12 @@ class OptionQuote(_MarketDataModel):
     price_type: Literal["bbo", "indicative_quote", "trade_close_proxy", "unknown"] = "unknown"
     received_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     batch_id: Optional[str] = None
+    trade_timestamp: Optional[datetime] = None
+
+    @field_validator("trade_timestamp", mode="after")
+    @classmethod
+    def validate_trade_timestamp(cls, value: Optional[datetime]) -> Optional[datetime]:
+        return None if value is None else cls.require_aware_timestamp(value)
 
     @field_validator("option_type", mode="before")
     @classmethod

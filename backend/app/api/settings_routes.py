@@ -24,11 +24,11 @@ ALLOWED_KEYS = {"refresh_frequency_minutes", "intraday_refresh_seconds", "select
 class SettingsPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     refresh_frequency_minutes: int = Field(default=15, ge=5, le=1440)
-    intraday_refresh_seconds: int = Field(default=300, ge=30, le=3600)
+    intraday_refresh_seconds: int = Field(default=60, ge=60, le=3600)
     selected_symbols: list[str] = Field(default_factory=lambda: list(DEFAULT_SYMBOLS))
     manual_component_weights: Optional[dict[str, float]] = None
-    option_cleanup_enabled: bool = True
-    option_retention_days: int = Field(default=3, ge=1, le=30)
+    option_cleanup_enabled: bool = False
+    option_retention_days: int = Field(default=14, ge=14, le=365)
     svix_downsample_enabled: bool = True
     detailed_retention_days: int = Field(default=7, ge=1, le=365)
     maintenance_time_utc: str = "03:30"
@@ -48,11 +48,11 @@ def _load(database: Session) -> SettingsPayload:
     settings = get_settings()
     return SettingsPayload(
         refresh_frequency_minutes=values.get("refresh_frequency_minutes", settings.market_refresh_minutes),
-        intraday_refresh_seconds=values.get("intraday_refresh_seconds", values.get("refresh_frequency_minutes", settings.market_refresh_minutes) * 60),
+        intraday_refresh_seconds=values.get("intraday_refresh_seconds", 60),
         selected_symbols=values.get("selected_symbols", list(DEFAULT_SYMBOLS)),
         manual_component_weights=values.get("manual_component_weights"),
-        option_cleanup_enabled=values.get("option_cleanup_enabled", True),
-        option_retention_days=values.get("option_retention_days", 3),
+        option_cleanup_enabled=values.get("option_cleanup_enabled", False),
+        option_retention_days=max(14, values.get("option_retention_days", 14)),
         svix_downsample_enabled=values.get("svix_downsample_enabled", True),
         detailed_retention_days=values.get("detailed_retention_days", 7),
         maintenance_time_utc=values.get("maintenance_time_utc", "03:30"),

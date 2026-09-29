@@ -17,3 +17,6 @@ postgres_data
 *.sql
 *.log
 backups
+releases
+deploy/code-current
+deploy/code-releases

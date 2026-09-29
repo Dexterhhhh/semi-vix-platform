@@ -47,6 +47,8 @@ class VarianceResult(SVIXModel):
     forward_price: float = Field(gt=0)
     option_count: int = Field(ge=2)
     quality_metrics: Dict[str, float]
+    used_contract_ids: List[str] = Field(default_factory=list)
+    input_timestamps: List[datetime] = Field(default_factory=list)
 
 
 class TermStructureResult(SVIXModel):

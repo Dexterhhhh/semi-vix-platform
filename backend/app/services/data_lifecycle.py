@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from app.database.models import CustomIndexDaily, CustomIndexHistory, DataMaintenanceRun, OptionSnapshot, SVIXDaily, SVIXHistory, SystemSettings
 
 DEFAULT_POLICY = {
-    "option_cleanup_enabled": True,
-    "option_retention_days": 3,
+    "option_cleanup_enabled": False,
+    "option_retention_days": 14,
     "svix_downsample_enabled": True,
     "detailed_retention_days": 7,
     "maintenance_time_utc": "03:30",
@@ -24,6 +24,7 @@ def load_lifecycle_policy(database: Session) -> dict[str, object]:
     rows = database.query(SystemSettings).filter(SystemSettings.key.in_(values.keys())).all()
     for row in rows:
         values[row.key] = json.loads(row.value)
+    values["option_retention_days"] = max(14, int(values["option_retention_days"]))
     return values
 
 
@@ -152,7 +153,12 @@ def run_data_maintenance(database: Session, *, now: datetime | None = None, forc
             daily_written += len(custom_grouped)
             history_aggregated += _delete_ids_in_batches(database, CustomIndexHistory, [row.id for row in old_custom], batch_size)
 
-        if bool(policy["option_cleanup_enabled"]):
+        # An index point is not proof that every collection batch can be
+        # discarded. Raw quotes are deletable only after an explicit archive
+        # watermark has been recorded by a verified backup process.
+        archive_record = database.query(SystemSettings).filter_by(key="option_archive_through").first()
+        archive_through = date.fromisoformat(json.loads(archive_record.value)) if archive_record else None
+        if bool(policy["option_cleanup_enabled"]) and archive_through is not None:
             option_cutoff = now - timedelta(days=int(policy["option_retention_days"]))
             covered_inputs = {
                 (timestamp.date(), source.split(":", 1)[0].upper())
@@ -176,7 +182,7 @@ def run_data_maintenance(database: Session, *, now: datetime | None = None, forc
             )
             for calculation_date, provider in covered_inputs:
                 start, end = _day_bounds(calculation_date)
-                if end >= option_cutoff:
+                if end >= option_cutoff or calculation_date > archive_through:
                     continue
                 while True:
                     batch = [row_id for (row_id,) in database.query(OptionSnapshot.id).filter(OptionSnapshot.provider == provider, OptionSnapshot.timestamp >= start, OptionSnapshot.timestamp <= end).limit(batch_size).all()]

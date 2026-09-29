@@ -71,6 +71,18 @@ class AlpacaClient:
             response = await self._http.get(path, params=params)
             if response.status_code in {401, 403}:
                 raise ProviderPermissionError("Alpaca credentials or market-data subscription were rejected")
+            if response.status_code == 429:
+                from app.data.exceptions import ProviderRateLimitError
+                from email.utils import parsedate_to_datetime
+                retry = response.headers.get("Retry-After", "300")
+                try:
+                    seconds = int(retry)
+                except ValueError:
+                    try:
+                        seconds = int((parsedate_to_datetime(retry) - self._clock()).total_seconds())
+                    except (TypeError, ValueError, OverflowError):
+                        seconds = 300
+                raise ProviderRateLimitError(seconds)
             response.raise_for_status()
             payload = response.json()
             if not isinstance(payload, dict):
@@ -98,6 +110,8 @@ class AlpacaClient:
             "ask": quote.get("ap"),
             "volume": daily.get("v"),
             "timestamp": quote.get("t") or trade.get("t"),
+            "quote_timestamp": quote.get("t"),
+            "trade_timestamp": trade.get("t"),
             "delayed": self.feed == "indicative",
         }
         if isinstance(result["price"], (int, float)) and result["price"] > 0:
@@ -173,6 +187,8 @@ class AlpacaClient:
             "volume": daily.get("v"),
             "open_interest": snapshot.get("openInterest"),
             "implied_volatility": snapshot.get("impliedVolatility"),
-            "timestamp": quote.get("t") or trade.get("t"),
+            "timestamp": quote.get("t"),
+            "quote_timestamp": quote.get("t"),
+            "trade_timestamp": trade.get("t"),
             "delayed": self.feed == "indicative",
         }

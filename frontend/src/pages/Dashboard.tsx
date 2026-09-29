@@ -2,7 +2,8 @@ import { useState, type CSSProperties } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getComponents, getCurrentSVIX, getHistory } from '../api/svix'
 import { SVIXCard } from '../components/SVIXCard'
-import { METRIC_OPTIONS, VolatilityChart, type MetricKey } from '../components/VolatilityChart'
+import { METRIC_OPTIONS, VolatilityChart, metricColor, type MetricKey } from '../components/VolatilityChart'
+import { useTheme } from '../theme'
 import { ComponentTable } from '../components/ComponentTable'
 import { IndexMethodology } from '../components/IndexMethodology'
 import { CustomIndexChart } from '../components/CustomIndexChart'
@@ -22,6 +23,7 @@ const rangeStart = (range: RangeKey) => {
 }
 
 export function Dashboard() {
+  const { theme } = useTheme()
   const [activeRange, setActiveRange] = useState<RangeKey | null>('1M')
   const [startDate, setStartDate] = useState(() => rangeStart('1M'))
   const [endDate, setEndDate] = useState(today)
@@ -50,12 +52,12 @@ export function Dashboard() {
   return <main>
     <header><div><p className="eyebrow">SEMICONDUCTOR VOLATILITY</p><h1>Semi‑VIX Dashboard</h1></div><span className="status-dot">只读分析</span></header>
     <div className="cards"><SVIXCard label="SVIX 30D" value={value?.svix} accent/><SVIXCard label="Core Semi" value={value?.core}/><SVIXCard label="Memory" value={value?.memory}/><SVIXCard label="AI Semi" value={value?.ai}/></div>
-    {value && <p className={value.estimated ? 'provider-warning' : 'success'}>估值时间 {new Date(value.timestamp).toLocaleString()} · {value.source_feed ?? '来源未知'} · {value.market_data_quality ?? '质量未知'} · {value.calculation_method ?? '旧版方法'} · 数据质量评分 {(value.calculation_quality * 100).toFixed(0)}%{value.estimated ? ' · 近似结果' : ' · 严格结果'}</p>}
+    {value && <p className={value.estimated ? 'provider-warning' : 'success'}>{value.calculation_method === 'semivix-observe-v1' ? value.source_feed?.endsWith(':indicative') ? '免费 Indicative 估算' : '观察估算' : value.estimated ? '旧版近似结果' : '旧版严格结果'} · 估值时间 {new Date(value.timestamp).toLocaleString()} · {value.source_feed ?? '来源未知'} · {value.calculation_method ?? '旧版方法'}{value.calculation_method === 'semivix-observe-v1' ? ` · 覆盖率 ${(value.coverage * 100).toFixed(0)}%` : ''}{value.oldest_input_at && Date.now() - new Date(value.oldest_input_at).getTime() > 15 * 60_000 ? ' · 已过期' : ''}</p>}
     <section className="panel chart-panel">
-      <div className="panel-title chart-title"><div><h3>历史走势</h3><p>同色浅虚线为历史近似值，同色实线为严格计算值；可拖动底部滑块或在图内缩放</p></div><span className="chart-status">{history.isFetching ? '载入中…' : `${history.data?.length ?? 0} 个数据点${history.data?.some((point) => point.estimated) ? ` · ${history.data.filter((point) => point.estimated).length} 个近似` : ''}${history.data?.some((point) => !point.estimated) ? ` · ${history.data.filter((point) => !point.estimated).length} 个严格` : ''}`}</span></div>
+      <div className="panel-title chart-title"><div><h3>历史走势</h3><p>此图保留旧版历史计算口径；新观察模式分时结果见单日仪表盘。可拖动底部滑块或在图内缩放。</p></div><span className="chart-status">{history.isFetching ? '载入中…' : `${history.data?.length ?? 0} 个数据点${history.data?.some((point) => point.estimated) ? ` · ${history.data.filter((point) => point.estimated).length} 个近似` : ''}${history.data?.some((point) => !point.estimated) ? ` · ${history.data.filter((point) => !point.estimated).length} 个严格` : ''}`}</span></div>
       <div className="chart-controls">
         <div className="metric-switcher" aria-label="图表指标">
-          {METRIC_OPTIONS.map((metric) => <button key={metric.key} type="button" aria-pressed={metrics.includes(metric.key)} className={metrics.includes(metric.key) ? 'active' : ''} style={{ '--metric-color': metric.color } as CSSProperties} onClick={() => toggleMetric(metric.key)}>{metric.label}</button>)}
+          {METRIC_OPTIONS.map((metric) => <button key={metric.key} type="button" aria-pressed={metrics.includes(metric.key)} className={metrics.includes(metric.key) ? 'active' : ''} style={{ '--metric-color': metricColor(metric.key, theme) } as CSSProperties} onClick={() => toggleMetric(metric.key)}>{metric.label}</button>)}
         </div>
         <div className="range-controls">
           <div className="ranges" aria-label="快速时间范围">
@@ -72,7 +74,7 @@ export function Dashboard() {
           ? <p className="chart-empty error">历史数据载入失败，请稍后重试。</p>
           : <VolatilityChart data={history.data ?? []} metrics={metrics}/>}
     </section>
-    <ComponentTable components={components.data}/>
+    <ComponentTable components={value ? { core: value.core, memory: value.memory, ai: value.ai } : components.data}/>
     {current.isError && <p className="empty">暂无 SVIX 历史数据。先完成行情采集并创建历史计算任务。</p>}
     {customConfig.data?.enabled && <section className="panel custom-index-dashboard">
       <div className="custom-index-summary"><div><span>独立自定义指数 · V{customConfig.data.version}</span><h3>{customConfig.data.name}</h3><p>{customConfig.data.components.map((item) => `${item.symbol} ${Number(item.weight_percent.toFixed(2))}%`).join(' · ')}</p></div><div className="custom-index-value"><strong>{customCurrent.data?.value.toFixed(2) ?? '—'}</strong><small>{customCurrent.data ? `质量 ${(customCurrent.data.calculation_quality * 100).toFixed(0)}%` : '等待首次计算'}</small></div></div>

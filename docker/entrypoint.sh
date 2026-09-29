@@ -30,10 +30,11 @@ rm -f /run/svix/migrations-complete
 ownership_marker="${PGDATA}/.svix-owner-$(id -u postgres)"
 if [[ ! -e "${ownership_marker}" ]]; then
   chown -R postgres:postgres "${PGDATA}"
-  gosu postgres touch "${ownership_marker}"
 fi
 
 if [[ ! -s "${PGDATA}/PG_VERSION" ]]; then
+  # A marker in an uninitialized volume makes initdb reject the directory.
+  rm -f "${ownership_marker}"
   password_file="$(mktemp)"
   trap 'rm -f "${password_file}"' EXIT
   printf '%s' "${POSTGRES_PASSWORD}" >"${password_file}"
@@ -47,5 +48,6 @@ if [[ ! -s "${PGDATA}/PG_VERSION" ]]; then
   rm -f "${password_file}"
   trap - EXIT
 fi
+gosu postgres touch "${ownership_marker}"
 
 exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf

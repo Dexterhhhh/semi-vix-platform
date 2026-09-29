@@ -1,9 +1,10 @@
 import pyotp
-from datetime import datetime, timezone
+import json
+from datetime import date, datetime, timezone
 from fastapi.testclient import TestClient
 
 from app.database.database import Base, SessionLocal, engine
-from app.database.models import SVIXHistory
+from app.database.models import MarketCollectionRun, SVIXHistory, SVIXObservation
 from app.main import app
 
 
@@ -50,3 +51,23 @@ def test_history_returns_one_preferred_point_per_day() -> None:
         assert points[0]["svix"] == 45
         assert points[0]["estimated"] is False
         assert points[1]["svix"] == 50
+
+
+def test_intraday_and_current_accept_missing_components() -> None:
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with TestClient(app) as client:
+        headers = {"Authorization": f"Bearer {_access_token(client)}"}
+        database = SessionLocal()
+        at = datetime(2026, 9, 22, 14, 0, tzinfo=timezone.utc)
+        try:
+            database.add(MarketCollectionRun(session_date=date(2026, 9, 22), status="COMPLETED", interval_minutes=1, interval_seconds=60, started_at=at, finished_at=at, batch_id="partial-api"))
+            database.add(SVIXObservation(session_date=date(2026, 9, 22), valuation_at=at, batch_id="partial-api", method_version="semivix-observe-v1", svix=None, core=None, memory=30, ai=40, status="PARTIAL_COVERAGE", coverage=.25, cached_coverage=0, source_feed="alpaca:indicative", details=json.dumps({"assets": {"MU": {"status": "NEW", "term_method": "single_expiry"}}, "component_counts": {"memory": "1/2", "ai": "1/3"}, "reasons": {"svix": "SOXX_UNAVAILABLE"}, "oldest_input_at": "2026-09-22T13:59:00+00:00"})))
+            database.commit()
+        finally:
+            database.close()
+        response = client.get("/api/svix/intraday?session_date=2026-09-22", headers=headers)
+        assert response.status_code == 200
+        assert response.json()[0]["svix"] is None
+        assert response.json()[0]["memory"] == 30
+        assert client.get("/api/svix/current", headers=headers).json()["core"] is None

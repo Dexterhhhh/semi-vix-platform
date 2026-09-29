@@ -1,0 +1,23 @@
+# Optional, code-only update for the unchanged v0.3 amd64 runtime image.
+# Relative paths are resolved against the first Compose file (project root).
+services:
+  app:
+    volumes:
+      - type: bind
+        source: ./deploy/code-current/backend
+        target: /opt/svix/backend
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./deploy/code-current/frontend/dist
+        target: /usr/share/nginx/html
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./deploy/code-current/docker/entrypoint.sh
+        target: /usr/local/bin/entrypoint.sh
+        read_only: true
+        bind:
+          create_host_path: false

@@ -14,6 +14,14 @@ class ProviderPermissionError(ProviderError):
     """The provider rejected a read-only market-data request."""
 
 
+class ProviderRateLimitError(ProviderError):
+    """The provider requested a pause before another market-data call."""
+
+    def __init__(self, retry_after_seconds: int = 300):
+        self.retry_after_seconds = max(60, min(3600, retry_after_seconds))
+        super().__init__("Market-data rate limit reached")
+
+
 class UnsupportedSymbolError(ProviderError):
     """The requested underlying is outside the supported market universe."""
 

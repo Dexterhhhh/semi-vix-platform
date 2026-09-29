@@ -28,3 +28,6 @@ frontend/node_modules/
 *.p12
 certs/
 backups/
+deploy/code-current/
+deploy/code-releases/
+releases/
