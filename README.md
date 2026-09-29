@@ -1,468 +1,65 @@
-# Semi-VIX Platform
+# Semi-VIX
 
-当前发布版本：**v1.0**
+Semi-VIX 是自托管的半导体波动率观察平台。它通过只读行情接口计算 Semi-VIX、Core、Memory、AI 分项和自定义指数，提供日内趋势、历史图表与数据状态。当前版本为 **v1.0**。
 
-Semi-VIX 是一个私有、自托管的半导体波动率分析平台。系统通过只读行情接口采集期权数据，计算 SVIX、Core、Memory 和 AI Semiconductor Volatility，并提供历史图表、后台计算任务、数据保留策略和系统状态面板。
+支持 Alpaca Market Data、Interactive Brokers TWS / Gateway 和 Futu OpenD。平台没有下单、持仓或资金操作。Alpaca 免费 Indicative 报价生成的是**估算观察值**，不等同于 OPRA 实时行情或官方 VIX。
 
-v1.0 增加免费行情观察模式、日内折线与蜡烛图切换、浅色/深色界面，以及自定义指数标的名称识别。x86 NAS 可使用本地构建的离线更新包升级。
+## 主要功能
 
-支持的行情来源：
+- 日内折线图与 5、15、30 分钟蜡烛图，可切换观察分项。
+- 免费行情观察模式显示报价时效、成分覆盖率与缺失原因，不用旧报价伪造新数据点。
+- 自定义指数支持 1～20 个标的、权重和缺失策略；输入代码后显示标的名称并在保存时校验。
+- 浅色/深色界面、历史计算、数据库备份和数据保留设置。
 
-- Interactive Brokers TWS / IB Gateway
-- Futu OpenD
-- Alpaca Market Data（免费 Indicative 测试源 / 付费 OPRA 正式源）
+## 运行环境
 
-平台不包含下单、撤单、持仓或资金操作，不能用于交易。
+建议使用 Linux 或 NAS 上的 Docker Compose，至少 2 核 CPU、4 GB 内存。项目以单个 `app` 容器运行 Nginx、FastAPI、Go 计算与调度服务及 PostgreSQL 16；数据库保存在独立的 `postgres_data` 卷中。
 
-## 单容器架构
+### Ubuntu 22.04 / 24.04
 
-当前版本在 NAS 上只创建一个 `app` 容器。镜像内由 Supervisor 统一管理 Go 数值计算引擎、Go 调度器、PostgreSQL 16、FastAPI 兼容层和 Nginx；React 静态文件也由同一个 Nginx 提供。外部只暴露一个 HTTP 端口，Go 引擎、PostgreSQL 和 FastAPI 仅监听容器内部回环地址。
-
-组合相关性、组合方差和累计方差期限插值等高频数值路径已由常驻 Go 进程执行；周期调度和持久化任务扫描也已迁入 Go，不再需要 Redis、Celery Worker 或 Celery Beat。Python 目前仅保留 API、认证、数据库迁移及 Alpaca SDK 兼容层。后续可继续将 Alpaca HTTP 采集迁入 Go；整个迁移过程始终保持单 Docker 部署。
-
-数据库仍保存在独立的 Docker 卷 `postgres_data` 中，删除或升级容器不会删除数据。请注意：单容器便于家庭 NAS 部署和管理，但不适合需要分别扩容、滚动升级或服务级故障隔离的大型生产环境。
-
-## 系统要求
-
-- Ubuntu 22.04 或 24.04（推荐）
-- 2 核 CPU、4 GB 内存、20 GB 可用磁盘起步
-- 可以访问 Docker Hub、PyPI 和 npm 镜像
-- Alpaca 免费账户及 Market Data API Key / Secret
-- 允许访问 Alpaca Market Data API
-
-## Ubuntu 新手一键安装（推荐）
-
-将项目下载到 Ubuntu 22.04 或 24.04 服务器后，进入项目目录，只需执行：
+在完整项目目录中运行交互式安装脚本：
 
 ```sh
 sudo bash install-ubuntu.sh
 ```
 
-脚本会交互式询问：
+脚本会安装 Docker、生成密钥、设置管理员、构建镜像并检查服务。首次登录需要绑定 TOTP 验证器。
 
-- 管理员用户名
-- 管理员密码（二次确认，不回显）
-- 面板端口（留空则自动选择未占用的高位端口）
-
-然后自动完成：Docker 安装、安全密钥生成、`.env` 创建、镜像构建、数据库初始化、服务启动和健康检查。安装成功后会显示 SSH 隧道命令和面板地址。
-
-发布到自己的 GitHub 仓库后，可使用一条命令下载并安装（请替换仓库地址）：
+### 手动使用 Docker Compose
 
 ```sh
-git clone https://github.com/YOUR_ACCOUNT/YOUR_REPOSITORY.git semi-vix-platform && cd semi-vix-platform && sudo bash install-ubuntu.sh
-```
-
-> 当仓库为私有状态时，服务器必须事先配置该仓库的 GitHub SSH 读取权限。
-
-## 手动安装
-
-仅在需要自定义 Docker 安装方式或手工管理 `.env` 时使用以下步骤。
-
-### 群晖 DSM / Container Manager
-
-群晖上建议把本仓库目录作为 Container Manager 的“项目”，项目路径中保留 `docker-compose.yml`、`Dockerfile` 和 `.env`。首次部署或更新代码后，在项目目录执行：
-
-```sh
-docker compose up -d --build --remove-orphans
-```
-
-也可以在 Container Manager 的“项目”页面执行等价的重新构建操作。完成后，“容器”页面只会看到该项目的 `app-1` 一个容器；容器内部进程状态可通过以下命令查看：
-
-```sh
-docker compose exec app supervisorctl status
-```
-
-若使用 DSM 反向代理，把目标指向 `SVIX_HTTP_PORT` 配置的 NAS 本机端口，并在 HTTPS 场景设置 `COOKIE_SECURE=true`。
-
-### 1. 在 Ubuntu 安装 Docker
-
-通过 SSH 登录服务器，执行 Docker 官方便捷安装脚本：
-
-```sh
-curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-sudo sh /tmp/get-docker.sh
-sudo usermod -aG docker "$USER"
-```
-
-退出 SSH 并重新登录，让 Docker 用户组权限生效，然后验证：
-
-```sh
-docker --version
-docker compose version
-docker run --rm hello-world
-```
-
-Docker 官方将便捷脚本定位为快速初始化方式。需要锁定 Docker 版本或制定升级策略的生产服务器，请使用 [Docker 官方 Ubuntu APT 安装说明](https://docs.docker.com/engine/install/ubuntu/)。可以先执行 `sudo sh /tmp/get-docker.sh --dry-run` 检查脚本将进行的操作。
-
-### 2. 下载项目
-
-```sh
-sudo apt update
-sudo apt install -y git openssl
-git clone https://github.com/YOUR_ACCOUNT/YOUR_REPOSITORY.git semi-vix-platform
-cd semi-vix-platform
 cp .env.example .env
-```
-
-### 3. 配置密钥和管理员
-
-生成 JWT 密钥：
-
-```sh
-openssl rand -hex 32
-```
-
-分别执行两次以下命令，生成两个不同的 AES-256-GCM 密钥：
-
-```sh
-python3 -c "import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
-```
-
-编辑配置：
-
-```sh
-nano .env
-```
-
-至少修改以下字段：
-
-```dotenv
-SECRET_KEY=填入随机JWT密钥
-SECRET_ENCRYPTION_KEY=填入第一个AES密钥
-CREDENTIAL_MASTER_KEY=填入第二个AES密钥
-SVIX_ADMIN_USERNAME=设置你自己的管理员用户名
-SVIX_ADMIN_PASSWORD=设置一个高强度且唯一的密码
-POSTGRES_PASSWORD=设置另一个随机数据库密码
-```
-
-同步修改 `DATABASE_URL` 中的 PostgreSQL 密码，使其与 `POSTGRES_PASSWORD` 一致：
-
-```dotenv
-DATABASE_URL=postgresql+psycopg://svix:你的数据库密码@127.0.0.1:5432/svix
-```
-
-`.env` 包含所有真实密钥，已被 Git 忽略。不要上传、复制到工单或发送给其他人。
-
-### 4. 设置面板访问端口
-
-默认配置只绑定服务器本机，并由 Docker 随机选择可用端口：
-
-```dotenv
-SVIX_BIND_ADDRESS=127.0.0.1
-SVIX_HTTP_PORT=
-```
-
-如需固定端口，可填写任意未占用的 `1`～`65535` 端口：
-
-```dotenv
-SVIX_BIND_ADDRESS=127.0.0.1
-SVIX_HTTP_PORT=18443
-```
-
-除非已经配置云防火墙和 HTTPS 反向代理，否则不要将 `SVIX_BIND_ADDRESS` 改为 `0.0.0.0`。FastAPI 和 PostgreSQL 端口均不会映射到宿主机。
-
-### 5. 选择行情提供商
-
-### IBKR
-
-确保 TWS 或 IB Gateway 已启用 API、设置为只读模式，并配置：
-
-```dotenv
-DATA_PROVIDER=IBKR
-IBKR_HOST=host.docker.internal
-IBKR_PORT=7497
-IBKR_CLIENT_ID=19
-INSTALL_FUTU=false
-```
-
-常见 IBKR 端口：TWS 模拟账户 `7497`，TWS 实盘账户 `7496`，IB Gateway 模拟账户 `4002`，IB Gateway 实盘账户 `4001`。请以自己的网关设置为准。
-
-### Futu
-
-确保 OpenD 已启动并已登录，然后配置：
-
-```dotenv
-DATA_PROVIDER=FUTU
-FUTU_HOST=host.docker.internal
-FUTU_PORT=11111
-INSTALL_FUTU=true
-```
-
-修改 `INSTALL_FUTU` 后必须重新构建镜像。平台只创建 `OpenQuoteContext`，不会创建交易上下文。
-
-连接参数也可以在首次登录后的“设置与系统状态”页面修改。可选凭据会使用独立的 AES-256-GCM 密钥加密保存，页面不会回显明文。
-
-### Alpaca
-
-首次登录后进入“设置与系统状态”，选择 `Alpaca Market Data`，填写 Alpaca API Key 和 API Secret，再选择数据源：
-
-- `Indicative（免费）`：本项目支持的个人部署主数据源。它提供由 OPRA 数据派生并修改后的指示性 bid/ask，不是官方 OPRA BBO；实时结果会持续计算，但始终标记为 `indicative_quote` 与“估算”。历史数据使用期权日线收盘成交价作为 Q(K) 代理，并标记为 `trade_close_proxy`，不会冒充历史 BBO。
-- `OPRA（付费正式）`：适用于正式 SVIX 计算，需要 Alpaca 有效的 OPRA 市场数据订阅。
-
-平台只访问 `data.alpaca.markets` 的只读行情端点，不使用下单、账户或持仓接口。
-
-### 6. 启动平台
-
-```sh
+# 编辑 .env，填入真实密钥、管理员密码和数据库密码
 docker compose up -d --build
-```
-
-检查服务状态：
-
-```sh
 docker compose ps
-```
-
-查询面板实际端口：
-
-```sh
 docker compose port app 80
 ```
 
-随机端口示例输出：
+`.env` 至少需要设置 `SECRET_KEY`、`SECRET_ENCRYPTION_KEY`、`CREDENTIAL_MASTER_KEY`、`SVIX_ADMIN_USERNAME`、`SVIX_ADMIN_PASSWORD` 和 `POSTGRES_PASSWORD`；`DATABASE_URL` 中的数据库密码必须与 `POSTGRES_PASSWORD` 相同。密钥生成方式见 `.env.example`。本机 HTTP 或 SSH 隧道访问时设置 `COOKIE_SECURE=false`，HTTPS 反向代理下设置为 `true`。
 
-```text
-127.0.0.1:32768
-```
+默认只在 `127.0.0.1` 监听面板端口。通过 SSH 隧道或 HTTPS 反向代理访问，不要直接公开 HTTP 面板。登录后在“设置与系统”中配置并测试行情提供商；使用 Futu 时需在 `.env` 设置 `INSTALL_FUTU=true` 并重新构建镜像。
 
-使用实际端口检查健康状态：
+## 更新与备份
 
-```sh
-curl -fsS http://127.0.0.1:32768/health
-```
-
-成功时返回：
-
-```json
-{"status":"ok"}
-```
-
-## 7. 安全访问面板
-
-推荐通过 SSH 隧道访问。把 `32768` 替换成服务器实际端口：
-
-```sh
-ssh -L 8080:localhost:32768 SERVER_USER@SERVER_IP
-```
-
-保持 SSH 会话开启，在本机浏览器访问：
-
-```text
-http://localhost:8080
-```
-
-如果需要公网访问，应在平台前配置 HTTPS 反向代理，并通过云防火墙限制来源地址。不要直接公开随机或固定的 HTTP 面板端口。
-
-## 8. 首次登录和 MFA
-
-1. 使用 `.env` 中的 `SVIX_ADMIN_USERNAME` 和 `SVIX_ADMIN_PASSWORD` 登录。
-2. 将页面提供的 TOTP 信息导入 Google Authenticator、Microsoft Authenticator 或 Authy。
-3. 输入认证器当前显示的 6 位验证码完成绑定。
-4. 保存页面提供的恢复代码，并放在离线安全位置。
-5. 首次验证后，浏览器会通过 HttpOnly Refresh Cookie 静默续期；默认 7 天内无需重复输入密码和动态验证码。主动退出、Cookie 被清除或会话过期后需要重新完整登录。
-
-会话时长由 `.env` 中的 `REFRESH_EXPIRE_DAYS` 控制，默认值为 `7`。使用本机 HTTP 或 SSH 隧道访问时设置 `COOKIE_SECURE=false`；部署 HTTPS 后必须改为 `COOKIE_SECURE=true` 并重建服务。
-
-系统只支持一个管理员，不提供注册、多用户或角色管理。
-
-## 9. 使用面板
-
-### Dashboard
-
-从导航的“历史概览”查看当前 Semi-VIX、Core、Memory、AI 指标及旧版历史曲线。首页默认进入“日内趋势”。当前观察结果允许某个分项暂缺，并显示覆盖率与最后估值时间；旧版历史曲线保留原有方法口径。
-
-### 单日仪表盘
-
-单日仪表盘每 30 秒检查新观察结果。免费 Alpaca Indicative 报价可用于估算；卡片展示最后有效数值、最旧市场报价时间、原始权重覆盖率和缓存覆盖率。只有真实输入更新才新增观察点，输入过期后卡片标明旧值，曲线在缺口或口径变化处断开。
-
-日内走势可在折线图和蜡烛图之间切换。蜡烛图按 5、15 或 30 分钟汇总 SVIX、Core、Memory 或 AI 的有效观察值，显示该时段的首值、最高值、最低值和末值；无数据时段留空，同一时段计算口径变化时只保留最新口径。这是波动率指标的观察蜡烛，不是股票价格 K 线，也不按分钟补出不存在的报价。
-
-行情采集使用 NYSE 交易日历，自动处理周末、美国交易所假期、提前收盘以及夏令时。后台只在正常交易时段至正常收盘后 30 分钟之间运行。Go 调度器每 10 秒检查一次是否到期，采集最短间隔为 60 秒；失败会退避，429 会遵守服务返回的等待时间。页面刷新不会让旧市场报价变成新报价。
-
-观察模式使用独立的 `semivix-observe-v1` 记录和采集批次。新报价至多接受 15 分钟，超过 5 分钟标记为较旧；同日、同方法的单标的结果最多复用 10 分钟，且底层报价仍需在 15 分钟内。SOXX 可单独显示 Core，Memory 和 AI 分项分别独立计算；综合值要求 SOXX、至少 70% 原始权重和可用相关矩阵。免费估算仅用于观察自身波动，不等同于官方 VIX。
-
-### 历史计算
-
-选择起止日期和频率后创建后台任务。数据库中的任务记录是可恢复队列，由 Go 调度器执行，可在页面查看进度和结果。
-
-使用 Alpaca 免费延迟日线时，平台会自动启用历史近似模式：优先执行标准 30 日 VIX 插值；当免费数据缺少完整 Call/Put 配对或无法包围 30 日期限时，使用标的收盘价估算远期，并选取最接近 30 日的有效到期日。此类结果会降低质量分并标记为“近似”，任务完成信息会分别显示正式、近似和跳过的日期数量。该模式适合观察历史趋势，不等同于 OPRA 实时报价计算结果。
-
-Dashboard 使用同色系区分计算身份：浅色虚线表示 Indicative 或历史代理估算，实线仅表示正式 BBO 输入生成的严格值。免费账户的结果始终记录为 `alpaca:indicative`，不会因为计算过程完整而升级为严格值；只有实际付费 OPRA 输入才记录为 `alpaca:opra`。
-
-### 数据提供商
-
-在设置页选择 Alpaca、IBKR 或 Futu，填写对应凭据或连接参数，然后保存并测试连接。平台同时只启用一个行情来源。
-
-### 独立自定义指数
-
-在“设置与系统状态”中可以创建一个独立自定义指数，填写指数名称、1～20个美股或ETF期权标的及基础权重；权重合计必须为100%。可选择两种缺失策略：
-
-- 严格：任一标的缺少有效期权链或历史收益数据时不生成结果
-- 容错：可用标的达到至少50%基础权重时，将剩余权重重新归一化后计算
-
-启用后，系统会把自定义成分自动加入行情采集和历史回填范围，并在主仪表盘与单日仪表盘显示独立结果。修改名称、成分、权重或缺失策略会创建新版本；不同版本的历史结果不会混合。自定义指数同样遵循详细结果保留与每日降采样策略。
-
-### 数据生命周期
-
-默认策略：
-
-- 原始期权快照至少保留 14 天；默认关闭自动清理
-- 即使启用清理，也只有记录了经核验备份的归档日期后才会删除该日期及以前的已覆盖快照；某天已有一个指数点不能证明全部采集批次可删
-- 详细 SVIX 结果保留 7 天
-- 更早结果聚合为每日 OHLC 后长期保存
-- 每批最多删除 10,000 行，避免长事务
-
-可以在设置页修改保留天数、每日维护时间，或手动触发维护任务。
-
-在恢复的数据库副本上回放仍保留的采集批次时，进入 `backend` 目录，先运行 `python -m app.services.observation_replay 2026-09-22 2026-09-24` 查看批次清单；确认副本后追加 `--write`。回放按原批次、原接收时间计算，重复执行不会重复写入观察点。旧版历史结果不被改写。
-
-## 10. 常用维护命令
-
-查看状态：
-
-```sh
-docker compose ps
-```
-
-查看日志：
-
-```sh
-docker compose logs -f
-docker compose logs --tail=200 app
-```
-
-重启服务：
-
-```sh
-docker compose restart
-```
-
-停止服务并保留数据：
-
-```sh
-docker compose down
-```
-
-重新启动：
-
-```sh
-docker compose up -d
-```
-
-## 11. 升级
-
-对于编译较慢的 x86 NAS，可在本地构建 `linux/amd64` 镜像后上传，或在 Go 与依赖均未改变时上传仅含 Python/前端的代码包。具体前提、校验、迁移及回滚步骤见 [NAS 离线更新计划](deploy/NAS离线更新计划.md)。代码挂载更新必须使用该计划的 Compose 覆盖文件；普通 `docker compose up -d --build` 仍会在 NAS 编译。
-
-升级前先备份数据库，然后执行：
-
-```sh
-git pull --ff-only
-docker compose up -d --build
-docker compose ps
-```
-
-后端启动时会自动运行数据库迁移。不要同时运行多个升级命令。
-
-### 从旧的七容器版本升级
-
-旧版的 PostgreSQL 也是 16，因此新容器会继续使用原来的 `postgres_data` 卷，不需要导入导出。先在拉取新代码前用旧版服务名创建备份：
-
-```sh
-docker compose exec -T postgres pg_dump -U svix -d svix -Fc > semi-vix-before-single-container.backup
-```
-
-然后更新代码：
-
-```sh
-git pull --ff-only
-```
-
-无需修改旧 `.env`：入口脚本会根据原有 `POSTGRES_*` 配置生成容器内部连接地址。移除旧服务并启动单容器版：
-
-```sh
-docker compose down --remove-orphans
-docker compose up -d --build
-docker compose ps
-```
-
-`docker compose down --remove-orphans` 不带 `-v`，所以会移除旧容器但保留数据库卷。不要在迁移时添加 `-v`。
-
-## 12. 数据库备份与恢复
-
-创建备份：
+更新前先备份数据库，并把备份保存到安全位置：
 
 ```sh
 docker compose exec -T app bash -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > semi-vix.backup
-```
-
-备份文件包含平台设置、加密凭据和历史结果，应按敏感数据保护。
-
-恢复前先停止会写数据库的服务：
-
-```sh
-docker compose exec app supervisorctl stop scheduler backend
-docker compose exec -T app bash -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_restore -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < semi-vix.backup
-docker compose exec app supervisorctl start backend scheduler
-```
-
-建议先在独立测试服务器验证恢复流程。
-
-## 13. 故障排查
-
-### `permission denied` 访问 Docker
-
-退出 SSH 并重新登录，确认当前用户已加入 `docker` 组：
-
-```sh
-groups
-```
-
-### 页面无法打开
-
-```sh
+test -s semi-vix.backup
+git pull --ff-only
+docker compose up -d --build
 docker compose ps
-docker compose port app 80
-docker compose logs --tail=100 app
 ```
 
-确认 SSH 隧道使用的是服务器当前实际端口。
+启动时会自动运行数据库迁移。`docker compose down` 会保留数据卷；**`docker compose down -v` 会删除数据库和全部历史数据**。不要把 `.env`、数据库备份、恢复代码或私钥提交到公开仓库。
 
-### 数据提供商连接失败
-
-- 确认 TWS、IB Gateway 或 OpenD 正在运行。
-- 确认 API/行情权限已启用。
-- 检查 Host、端口和 IBKR Client ID。
-- 检查网关是否限制受信任 IP。
-- Futu 部署确认 `.env` 中 `INSTALL_FUTU=true`，并重新执行 `docker compose up -d --build`。
-
-### 查看健康状态
+## 开发检查
 
 ```sh
-PORT=$(docker compose port app 80 | sed 's/.*://')
-curl -fsS "http://127.0.0.1:${PORT}/health"
+# 后端：先在虚拟环境安装 requirements-dev.txt
+(cd backend && python -m pytest -q)
+# 前端
+(cd frontend && npm test && npm run build)
+# Go
+go test ./...
 ```
-
-## 14. 安全须知
-
-- 不要提交 `.env`、数据库备份、证书私钥或恢复代码。
-- 不要复用 JWT、TOTP、凭据加密和数据库密码。
-- 不要公开 PostgreSQL 或 FastAPI 内部端口。
-- 默认使用 `127.0.0.1` 和 SSH 隧道访问。
-- 公网部署必须启用 HTTPS、防火墙和定期备份。
-- 定期检查 `docker compose logs`、磁盘空间和最近数据维护状态。
-
-## 15. 卸载
-
-停止并删除容器，保留数据库卷：
-
-```sh
-docker compose down
-```
-
-永久删除容器和数据库卷：
-
-```sh
-docker compose down -v
-```
-
-`docker compose down -v` 会永久删除管理员、设置、加密凭据和全部历史数据，无法撤销。

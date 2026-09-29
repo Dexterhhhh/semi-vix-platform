@@ -18,5 +18,5 @@ postgres_data
 *.log
 backups
 releases
-deploy/code-current
-deploy/code-releases
+deploy
+semivix*.md
