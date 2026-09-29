@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-PROJECT_DIR="/volume1/homes/dexterma/docker/semi-vix-platform"
-ARCHIVE="/volume1/homes/dexterma/docker/semi-vix-single-upgrade.tar.gz"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ARCHIVE="${SVIX_UPGRADE_ARCHIVE:-${PROJECT_DIR}/../semi-vix-single-upgrade.tar.gz}"
 BACKUP_DIR="${PROJECT_DIR}/backups"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 SOURCE_BACKUP="${BACKUP_DIR}/source-before-single-${STAMP}.tar.gz"
@@ -11,6 +11,8 @@ if [[ "${EUID}" -ne 0 ]]; then
   printf 'Run this script with sudo.\n' >&2
   exit 1
 fi
+PROJECT_UID="$(stat -c '%u' "${PROJECT_DIR}")"
+PROJECT_GID="$(stat -c '%g' "${PROJECT_DIR}")"
 if [[ ! -s "${ARCHIVE}" ]]; then
   printf 'Upgrade archive is missing: %s\n' "${ARCHIVE}" >&2
   exit 1
@@ -24,11 +26,11 @@ tar -czf "${SOURCE_BACKUP}" \
   --exclude='./backups' \
   --exclude='./.git' \
   -C "${PROJECT_DIR}" .
-chown dexterma:users "${SOURCE_BACKUP}"
+chown "${PROJECT_UID}:${PROJECT_GID}" "${SOURCE_BACKUP}"
 chmod 0600 "${SOURCE_BACKUP}"
 
 tar -xzf "${ARCHIVE}" -C "${PROJECT_DIR}"
-chown -R dexterma:users "${PROJECT_DIR}"
+chown -R "${PROJECT_UID}:${PROJECT_GID}" "${PROJECT_DIR}"
 chmod 0600 "${PROJECT_DIR}/.env"
 
 cd "${PROJECT_DIR}"
@@ -62,4 +64,3 @@ docker compose exec -T app supervisorctl status
 docker compose exec -T app bash -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -l'
 docker compose ps
 printf 'UPGRADE_OK source_backup=%s\n' "${SOURCE_BACKUP}"
-

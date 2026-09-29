@@ -13,11 +13,11 @@
 
 ## 部署前共同检查
 
-1. 确认 NAS 的项目目录为 `/volume1/homes/dexterma/docker/semi-vix-platform`，当前确实运行 `b5eddf1` 构建的 `semi-vix-platform:latest`，CPU 架构为 `amd64`。若来源不同，不使用 B。
+1. 确认 NAS 项目目录（下文以 `/path/to/semi-vix-platform` 表示）当前确实运行 `b5eddf1` 构建的 `semi-vix-platform:latest`，CPU 架构为 `amd64`。若来源不同，不使用 B。
 2. 在 NAS 当前项目目录备份数据库：
 
    ```sh
-   cd /volume1/homes/dexterma/docker/semi-vix-platform
+   cd /path/to/semi-vix-platform
    mkdir -p backups
    docker compose exec -T app bash -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > backups/before-v1.0.backup
    test -s backups/before-v1.0.backup
@@ -39,7 +39,7 @@ bash deploy/prepare-code-overlay.sh v1.0
 脚本检查运行层/依赖未变，构建前端，并输出 `releases/nas-code-v1.0/semi-vix-code-v1.0.tar.gz` 及 `SHA256SUMS`。包中包含修复首次建库问题的入口脚本。上传这两个文件，以及 `deploy/compose-code-overlay.yml` 到 NAS 的项目目录。NAS 端保留 `docker-compose.yml`、`.env` 原件。上传后：
 
 ```sh
-cd /volume1/homes/dexterma/docker/semi-vix-platform
+cd /path/to/semi-vix-platform
 cd releases/nas-code-v1.0
 sha256sum -c SHA256SUMS
 cd ../..
@@ -87,7 +87,7 @@ shasum -a 256 semi-vix-v1.0-amd64.tar.gz > semi-vix-v1.0-amd64.tar.gz.sha256
 本地 arm64 到 amd64 的 `RUN` 步骤可能走仿真，首次构建仍可能慢；后续利用本地缓存。上传镜像包与校验文件到 NAS。先做上述数据库备份，再执行：
 
 ```sh
-cd /volume1/homes/dexterma/docker/semi-vix-platform
+cd /path/to/semi-vix-platform
 sha256sum -c semi-vix-v1.0-amd64.tar.gz.sha256
 docker tag semi-vix-platform:latest semi-vix-platform:before-v1.0
 docker load -i semi-vix-v1.0-amd64.tar.gz
