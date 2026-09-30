@@ -1,6 +1,6 @@
 from datetime import date
 
-from app.services.alpaca_history import _chunks, _month_windows, _utc_midnight
+from app.services.alpaca_history import _chunks, _month_windows, _utc_midnight, backfill_alpaca_history
 
 
 def test_alpaca_history_month_windows_and_chunks_are_bounded() -> None:

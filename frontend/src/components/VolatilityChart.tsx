@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import * as echarts from 'echarts'
+import * as echarts from '../lib/echarts'
 import type { SVIXPoint } from '../types'
 import { chartPalette, useTheme, type Theme } from '../theme'
 

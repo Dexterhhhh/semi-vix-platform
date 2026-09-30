@@ -3,10 +3,7 @@ from __future__ import annotations
 from app.config import get_settings
 from app.data.exceptions import ProviderConfigurationError
 from app.data.provider import MarketDataProvider
-from app.data.providers.futu.adapter import FutuProvider
-from app.data.providers.futu.client import FutuClient
-from app.data.providers.ibkr.adapter import IBKRProvider
-from app.data.providers.ibkr.client import IBKRClient
+from app.data.vendor_factory import create_vendor_provider
 from app.data.providers.alpaca.adapter import AlpacaProvider
 from app.data.providers.alpaca.client import AlpacaClient
 
@@ -23,10 +20,8 @@ def create_provider(
 ) -> MarketDataProvider:
     settings = get_settings()
     provider = (provider_name or settings.data_provider).upper()
-    if provider == "IBKR":
-        return IBKRProvider(IBKRClient(host or settings.ibkr_host, port or settings.ibkr_port, client_id if client_id is not None else settings.ibkr_client_id))
-    if provider == "FUTU":
-        return FutuProvider(FutuClient(host or settings.futu_host, port or settings.futu_port))
+    if provider in {"IBKR", "FUTU"}:
+        return create_vendor_provider(provider, host=host, port=port, client_id=client_id)
     if provider == "ALPACA":
         if not api_key or not secret:
             raise ProviderConfigurationError("Alpaca API key and secret are required")

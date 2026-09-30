@@ -1,0 +1,8 @@
+# Internal IBKR/Futu SDK bridge only; Go manages database migrations.
+# API, authentication, Alpaca, SVIX and scheduling execute in Go.
+fastapi==0.115.12
+uvicorn==0.34.2
+sqlalchemy==2.0.40
+psycopg[binary]==3.2.6
+pydantic-settings==2.9.1
+ib_insync==0.9.86

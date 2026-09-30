@@ -15,10 +15,7 @@ if [[ ! "${POSTGRES_USER}" =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]]; then
   exit 1
 fi
 
-# This image always uses its embedded PostgreSQL. Rebuild the URL
-# here so an existing multi-container .env continues to work without edits.
-database_password_encoded="$(python -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["POSTGRES_PASSWORD"], safe=""))')"
-export DATABASE_URL="postgresql+psycopg://${POSTGRES_USER}:${database_password_encoded}@127.0.0.1:5432/${POSTGRES_DB}"
+# The Go runtime builds the database URL and applies schema migrations.
 
 install -d -m 0700 -o postgres -g postgres "${PGDATA}"
 install -d -m 0775 -o postgres -g postgres /var/run/postgresql
@@ -50,4 +47,4 @@ if [[ ! -s "${PGDATA}/PG_VERSION" ]]; then
 fi
 gosu postgres touch "${ownership_marker}"
 
-exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+exec /usr/local/bin/svix-runtime

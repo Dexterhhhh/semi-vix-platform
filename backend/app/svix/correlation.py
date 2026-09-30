@@ -9,7 +9,6 @@ import numpy as np
 from app.svix.constants import CORRELATION_WINDOWS, CORRELATION_WINDOW_WEIGHTS
 from app.svix.exceptions import InsufficientCorrelationData
 from app.svix.models import CorrelationMatrix
-from app.svix import go_engine
 
 
 def calculate_returns(prices: Sequence[float]) -> list[float]:
@@ -21,12 +20,6 @@ def calculate_returns(prices: Sequence[float]) -> list[float]:
 
 def calculate_correlation_matrix(returns_by_symbol: Mapping[str, Sequence[float]]) -> CorrelationMatrix:
     """Require 252 aligned returns, then blend 60/120/252 day correlations."""
-    if go_engine.enabled():
-        try:
-            result = go_engine.call("/v1/correlation", {"returns": {asset: list(values) for asset, values in returns_by_symbol.items()}})
-            return CorrelationMatrix.model_validate(result)
-        except (ValueError, RuntimeError) as exc:
-            raise InsufficientCorrelationData(str(exc)) from exc
     assets = sorted(returns_by_symbol)
     if len(assets) < 2:
         raise InsufficientCorrelationData("At least two assets are required for a correlation matrix")

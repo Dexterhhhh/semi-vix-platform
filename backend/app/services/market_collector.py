@@ -12,9 +12,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.data.factory import create_provider
 from app.data.exceptions import ProviderPermissionError, ProviderRateLimitError
-from app.data.credentials import decrypt_credential
 from app.data.provider import MarketDataProvider
 from app.data.storage.option_repository import OptionRepository
 from app.data.storage.quote_repository import QuoteRepository
@@ -99,16 +97,21 @@ async def collect_option_snapshot(symbols: Iterable[str], database: Session, pro
     """
 
     requested = list(symbols)
-    configured = database.query(ProviderCredential).filter_by(enabled=True).first()
-    market_provider = provider or create_provider(
-        configured.provider if configured else None,
-        host=configured.host if configured else None,
-        port=configured.port if configured else None,
-        client_id=configured.client_id if configured else None,
-        api_key=decrypt_credential(configured.api_key_encrypted) if configured and configured.api_key_encrypted else None,
-        secret=decrypt_credential(configured.secret_encrypted) if configured and configured.secret_encrypted else None,
-        data_feed=configured.data_feed if configured else None,
-    )
+    market_provider = provider
+    if market_provider is None:
+        # Used only by the retained Python reference implementation.
+        from app.data.factory import create_provider
+        from app.data.credentials import decrypt_credential
+        configured = database.query(ProviderCredential).filter_by(enabled=True).first()
+        market_provider = create_provider(
+            configured.provider if configured else None,
+            host=configured.host if configured else None,
+            port=configured.port if configured else None,
+            client_id=configured.client_id if configured else None,
+            api_key=decrypt_credential(configured.api_key_encrypted) if configured and configured.api_key_encrypted else None,
+            secret=decrypt_credential(configured.secret_encrypted) if configured and configured.secret_encrypted else None,
+            data_feed=configured.data_feed if configured else None,
+        )
     batch_id = str(uuid4())
     summary = CollectionSummary(provider=market_provider.provider_name, started_at=datetime.now(timezone.utc), symbols_requested=len(requested), batch_id=batch_id)
     stock_repository = QuoteRepository(database)

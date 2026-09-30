@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import * as echarts from 'echarts'
+import * as echarts from '../lib/echarts'
 
 import type { ObservationPoint } from '../types'
 import { METRIC_OPTIONS, type MetricKey } from './VolatilityChart'

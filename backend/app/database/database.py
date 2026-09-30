@@ -23,6 +23,6 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def create_schema_for_development() -> None:
-    """Local/test fallback. Production startup runs Alembic first."""
+    """Reference/test fallback; Go manages production schema migrations."""
     from app.database import models  # noqa: F401
     Base.metadata.create_all(engine)

@@ -13,7 +13,7 @@ Semi-VIX 是自托管的半导体波动率观察平台。它通过只读行情�
 
 ## 运行环境
 
-建议使用 Linux 或 NAS 上的 Docker Compose，至少 2 核 CPU、4 GB 内存。项目以单个 `app` 容器运行 Nginx、FastAPI、Go 计算与调度服务及 PostgreSQL 16；数据库保存在独立的 `postgres_data` 卷中。
+建议使用 Linux 或 NAS 上的 Docker Compose，至少 2 核 CPU、4 GB 内存。一个 `app` 容器运行 Nginx、Go 服务和 PostgreSQL 16，数据库保存在 `postgres_data` 卷中。Alpaca 版不含 Python；完整版增加 IBKR／Futu SDK 桥接。两版均由 Go 管理数据库升级和进程，构建时自动适配目标 CPU 架构。详见 [版本与编译说明](docs/source-editions.md)。
 
 ### Ubuntu 22.04 / 24.04
 
@@ -28,16 +28,15 @@ sudo bash install-ubuntu.sh
 ### 手动使用 Docker Compose
 
 ```sh
-cp .env.example .env
-# 编辑 .env，填入真实密钥、管理员密码和数据库密码
+./scripts/init-env.sh
 docker compose up -d --build
 docker compose ps
 docker compose port app 80
 ```
 
-`.env` 至少需要设置 `SECRET_KEY`、`SECRET_ENCRYPTION_KEY`、`CREDENTIAL_MASTER_KEY`、`SVIX_ADMIN_USERNAME`、`SVIX_ADMIN_PASSWORD` 和 `POSTGRES_PASSWORD`；`DATABASE_URL` 中的数据库密码必须与 `POSTGRES_PASSWORD` 相同。密钥生成方式见 `.env.example`。本机 HTTP 或 SSH 隧道访问时设置 `COOKIE_SECURE=false`，HTTPS 反向代理下设置为 `true`。
+初始化脚本在本机生成随机密钥和密码，管理员登录信息保存在 `.env`。首次登录需绑定 TOTP。本机 HTTP 或 SSH 隧道访问时设置 `COOKIE_SECURE=false`，HTTPS 反向代理下设置为 `true`。数据库连接地址由运行器自动生成，行情采集频率在设置页面调整。
 
-默认只在 `127.0.0.1` 监听面板端口。通过 SSH 隧道或 HTTPS 反向代理访问，不要直接公开 HTTP 面板。登录后在“设置与系统”中配置并测试行情提供商；使用 Futu 时需在 `.env` 设置 `INSTALL_FUTU=true` 并重新构建镜像。
+默认只在 `127.0.0.1` 监听面板端口。通过 SSH 隧道或 HTTPS 反向代理访问，不要直接公开 HTTP 面板。登录后在“设置与系统”中配置并测试行情提供商；默认 Dockerfile 构建完整版，已包含 IBKR／Futu SDK；仅需 Alpaca 时设置 `SVIX_DOCKERFILE=Dockerfile.alpaca`。两者均不固定 CPU 架构。
 
 ## 更新与备份
 
@@ -62,4 +61,8 @@ docker compose ps
 (cd frontend && npm test && npm run build)
 # Go
 go test ./...
+# Go 与 PostgreSQL 的隔离集成测试，需要 Docker
+bash scripts/test-go-integration.sh
 ```
+
+Go 迁移范围与兼容性说明见 [迁移说明](docs/go-migration.md)。

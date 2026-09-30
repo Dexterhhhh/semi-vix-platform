@@ -22,6 +22,8 @@ frontend/node_modules/
 *.sqlite3
 *.dump
 *.sql
+!go/internal/service/sql/*.sql
+!go/internal/database/migrations/*.sql
 *.log
 *.pem
 *.key

@@ -9,7 +9,7 @@ from typing import Iterable
 from app.data.models import OptionQuote
 from app.svix.constants import CALENDAR_DAYS_PER_YEAR
 from app.svix.exceptions import InvalidVariance, SVIXError
-from app.svix.forward import calculate_forward, option_mid, select_k0
+from app.svix.forward import calculate_forward, select_k0
 from app.svix.models import ForwardResult, VarianceResult
 from app.svix.option_filter import filter_otm_options
 

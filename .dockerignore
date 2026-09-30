@@ -15,6 +15,12 @@ postgres_data
 *.sqlite*
 *.dump
 *.sql
+!go/internal/service/sql/*.sql
+!go/internal/database/migrations/*.sql
+*.pem
+*.key
+*.p12
+certs
 *.log
 backups
 releases

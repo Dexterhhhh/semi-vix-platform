@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { configureProvider, getProviderConfiguration, getProviderStatus, testProviderConnection, type AlpacaFeed, type ProviderCredentials, type ProviderName } from '../api/provider'
+import { configureProvider, getProviderCapabilities, getProviderConfiguration, getProviderStatus, testProviderConnection, type AlpacaFeed, type ProviderCredentials, type ProviderName } from '../api/provider'
 import { getLifecycleStatus, getSettings, getSystemStatus, runLifecycleMaintenance, saveSettings } from '../api/settings'
 import type { DashboardSettings } from '../types'
 import '../provider.css'
@@ -16,7 +16,9 @@ export function Settings() {
   const system = useQuery({ queryKey: ['system-status'], queryFn: getSystemStatus, refetchInterval: 10000 })
   const lifecycle = useQuery({ queryKey: ['lifecycle-status'], queryFn: getLifecycleStatus, refetchInterval: 15000 })
   const providerStatus = useQuery({ queryKey: ['provider-status'], queryFn: getProviderStatus, retry: false })
-  const [selectedProvider, setSelectedProvider] = useState<ProviderName>('IBKR')
+  const capabilities = useQuery({ queryKey: ['provider-capabilities'], queryFn: getProviderCapabilities })
+  const [selectedProvider, setSelectedProvider] = useState<ProviderName>('ALPACA')
+  const supportedProviders = capabilities.data?.providers ?? ['ALPACA']
   const configuration = useQuery({ queryKey: ['provider-configuration', selectedProvider], queryFn: () => getProviderConfiguration(selectedProvider) })
   const [host, setHost] = useState('')
   const [port, setPort] = useState('')
@@ -86,7 +88,7 @@ export function Settings() {
     <section className="panel provider-panel">
       <div className="panel-title"><h3>数据提供商</h3><span className={`connection-badge ${currentStatus?.connected ? 'online' : ''}`}>{currentStatus?.connected ? '已连接' : currentStatus?.configured ? '已配置' : '未配置'}</span></div>
       <form className="provider-form" onSubmit={submitProvider}>
-        <label>提供商<select value={selectedProvider} onChange={(event) => setSelectedProvider(event.target.value as ProviderName)}><option value="IBKR">Interactive Brokers</option><option value="FUTU">Futu OpenD</option><option value="ALPACA">Alpaca Market Data</option></select></label>
+        <label>提供商<select value={selectedProvider} onChange={(event) => setSelectedProvider(event.target.value as ProviderName)}>{supportedProviders.map((provider) => <option key={provider} value={provider}>{provider === 'ALPACA' ? 'Alpaca Market Data' : provider === 'IBKR' ? 'Interactive Brokers' : 'Futu OpenD'}</option>)}</select></label>
         <label>{selectedProvider === 'IBKR' ? 'TWS / Gateway Host' : selectedProvider === 'FUTU' ? 'OpenD Host' : 'API Base URL（固定官方地址）'}<input required readOnly={selectedProvider === 'ALPACA'} value={host} onChange={(event) => setHost(event.target.value)} placeholder={selectedProvider === 'ALPACA' ? 'https://data.alpaca.markets' : 'host.docker.internal'} /></label>
         {selectedProvider !== 'ALPACA' && <label>端口<input required type="number" min="1" max="65535" value={port} onChange={(event) => setPort(event.target.value)} /></label>}
         {selectedProvider === 'IBKR' && <label>Client ID<input required type="number" min="0" value={clientId} onChange={(event) => setClientId(event.target.value)} /></label>}

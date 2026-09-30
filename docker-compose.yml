@@ -1,11 +1,11 @@
 services:
   app:
-    image: semi-vix-platform:latest
+    image: ${SVIX_IMAGE:-semi-vix-platform:latest}
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: ${SVIX_DOCKERFILE:-Dockerfile}
       args:
-        INSTALL_FUTU: ${INSTALL_FUTU:-false}
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
     restart: unless-stopped

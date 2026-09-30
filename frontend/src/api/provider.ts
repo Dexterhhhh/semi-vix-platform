@@ -8,6 +8,7 @@ export type ProviderConfiguration = { provider: ProviderName; configured: boolea
 export type ProviderConfigurationInput = { provider: ProviderName; host: string; port: number; client_id?: number; data_feed?: AlpacaFeed; credentials?: ProviderCredentials }
 
 export const getProviderStatus = async () => (await api.get<ProviderStatus>('/provider/status')).data
+export const getProviderCapabilities = async () => (await api.get<{ edition: 'alpaca' | 'full'; providers: ProviderName[] }>('/provider/capabilities')).data
 export const getProviderConfiguration = async (provider: ProviderName) => (await api.get<ProviderConfiguration>('/provider/configuration', { params: { provider } })).data
 export const configureProvider = async (configuration: ProviderConfigurationInput) => (await api.post<{ provider: ProviderName; enabled: boolean }>('/provider/configure', configuration)).data
 export const testProviderConnection = async () => (await api.post<ProviderStatus>('/provider/test-connection')).data

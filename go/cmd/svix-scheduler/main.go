@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/Dexterhhhh/semi-vix-platform/go/internal/market"
 	"log"
 	"net/http"
 	"os"
@@ -17,9 +18,19 @@ type schedule struct {
 }
 
 func run(ctx context.Context, task schedule) {
+	if task.name == "market" {
+		status, err := market.Current(time.Now())
+		if err != nil {
+			log.Printf("NYSE calendar unavailable: %v", err)
+			return
+		}
+		if !status.IsCollectionWindow {
+			return
+		}
+	}
 	commandCtx, cancel := context.WithTimeout(ctx, task.timeout)
 	defer cancel()
-	request, err := http.NewRequestWithContext(commandCtx, http.MethodPost, "http://127.0.0.1:8000/internal/scheduler/"+task.name, nil)
+	request, err := http.NewRequestWithContext(commandCtx, http.MethodPost, "http://127.0.0.1:8090/internal/scheduler/"+task.name, nil)
 	if err != nil {
 		log.Printf("task %s request failed: %v", task.name, err)
 		return

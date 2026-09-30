@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 import logging
 from typing import Literal, Mapping

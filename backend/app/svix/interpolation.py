@@ -6,7 +6,6 @@ import math
 from typing import Iterable
 
 from app.svix.exceptions import MissingExpiry
-from app.svix import go_engine
 from app.svix.models import TermStructureResult, VarianceResult
 
 
@@ -47,22 +46,10 @@ def interpolate_term_structure(
     weight_near = (next_expiry.days_to_expiry - target_days) / (next_expiry.days_to_expiry - near.days_to_expiry)
     # A variance swap accumulates variance over time.  Interpolate total
     # variance (T * sigma^2), then annualize at the target horizon.
-    if go_engine.enabled():
-        try:
-            variance = float(go_engine.call("/v1/interpolate", {
-                "near_days": near.days_to_expiry,
-                "near_variance": near.variance,
-                "far_days": next_expiry.days_to_expiry,
-                "far_variance": next_expiry.variance,
-                "target_days": target_days,
-            })["variance"])
-        except (KeyError, TypeError, ValueError, RuntimeError) as exc:
-            raise MissingExpiry(str(exc)) from exc
-    else:
-        variance = (
-            weight_near * near.days_to_expiry * near.variance
-            + (1.0 - weight_near) * next_expiry.days_to_expiry * next_expiry.variance
-        ) / target_days
+    variance = (
+        weight_near * near.days_to_expiry * near.variance
+        + (1.0 - weight_near) * next_expiry.days_to_expiry * next_expiry.variance
+    ) / target_days
     if not math.isfinite(variance) or variance <= 0:
         raise MissingExpiry("Variance interpolation produced an invalid value")
     quality = weight_near * _quality(near) + (1.0 - weight_near) * _quality(next_expiry)

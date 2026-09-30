@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import * as echarts from 'echarts'
+import * as echarts from '../lib/echarts'
 
 import type { ObservationPoint } from '../types'
 import { aggregateIntradayCandles } from '../lib/intradayCandles'

@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { logoutSession, refreshSession } from './api/auth'
 import { setAccessToken, setRefreshHandler, setUnauthorizedHandler } from './api/client'
-import { Dashboard } from './pages/Dashboard'
-import { History } from './pages/History'
-import { Settings } from './pages/Settings'
 import { Login } from './pages/Login'
-import { IntradayDashboard } from './pages/IntradayDashboard'
 import { AppShell } from './components/AppShell'
+
+const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })))
+const History = lazy(() => import('./pages/History').then((m) => ({ default: m.History })))
+const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })))
+const IntradayDashboard = lazy(() => import('./pages/IntradayDashboard').then((m) => ({ default: m.IntradayDashboard })))
 
 export default function App() {
   const [token, setToken] = useState<string | null>(null)
@@ -39,5 +40,5 @@ export default function App() {
 
   if (restoring) return <div className="session-loading"><span>正在恢复安全会话…</span></div>
   if (!token) return <Login onAuthenticated={setToken}/>
-  return <AppShell onLogout={logout}><Routes><Route path="/" element={<IntradayDashboard/>}/><Route path="/intraday" element={<Navigate to="/" replace/>}/><Route path="/overview" element={<Dashboard/>}/><Route path="/history" element={<History/>}/><Route path="/settings" element={<Settings/>}/><Route path="*" element={<Navigate to="/" replace/>}/></Routes></AppShell>
+  return <AppShell onLogout={logout}><Suspense fallback={<div className="session-loading"><span>正在加载页面…</span></div>}><Routes><Route path="/" element={<IntradayDashboard/>}/><Route path="/intraday" element={<Navigate to="/" replace/>}/><Route path="/overview" element={<Dashboard/>}/><Route path="/history" element={<History/>}/><Route path="/settings" element={<Settings/>}/><Route path="*" element={<Navigate to="/" replace/>}/></Routes></Suspense></AppShell>
 }
